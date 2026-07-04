@@ -105,6 +105,19 @@ CREATE TABLE inventory.item_suppliers (
 COMMENT ON TABLE inventory.item_suppliers IS '品項與供應商多對多對應';
 
 -- ============================================
+-- 5b. 門店 × 廠商配送對應
+-- ============================================
+CREATE TABLE inventory.store_suppliers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  store_id UUID NOT NULL REFERENCES inventory.stores(id) ON DELETE CASCADE,
+  supplier_id UUID NOT NULL REFERENCES inventory.suppliers(id) ON DELETE CASCADE,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  UNIQUE(store_id, supplier_id)
+);
+
+COMMENT ON TABLE inventory.store_suppliers IS '門店與供應商多對多對應，控制門店可叫貨的廠商';
+
+-- ============================================
 -- 6. 叫貨單 orders
 -- ============================================
 CREATE TABLE inventory.orders (
@@ -321,6 +334,7 @@ ALTER TABLE inventory.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory.suppliers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory.items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory.item_suppliers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory.store_suppliers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory.order_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory.purchase_summaries ENABLE ROW LEVEL SECURITY;
@@ -356,6 +370,10 @@ CREATE POLICY "items_admin" ON inventory.items FOR ALL USING (inventory.get_user
 -- item_suppliers: 全員可讀，管理者可寫
 CREATE POLICY "item_suppliers_select" ON inventory.item_suppliers FOR SELECT USING (true);
 CREATE POLICY "item_suppliers_admin" ON inventory.item_suppliers FOR ALL USING (inventory.get_user_role() = 'admin');
+
+-- store_suppliers: 全員可讀，管理者可寫
+CREATE POLICY "store_suppliers_select" ON inventory.store_suppliers FOR SELECT USING (true);
+CREATE POLICY "store_suppliers_admin" ON inventory.store_suppliers FOR ALL USING (inventory.get_user_role() = 'admin');
 
 -- orders: 自己店+管理者
 CREATE POLICY "orders_admin" ON inventory.orders FOR ALL USING (inventory.get_user_role() = 'admin');

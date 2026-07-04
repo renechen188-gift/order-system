@@ -207,6 +207,21 @@
   .toggle.on{background:var(--green)}
   .toggle::after{content:'';position:absolute;width:20px;height:20px;border-radius:50%;background:#fff;top:2px;left:2px;transition:left 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.15)}
   .toggle.on::after{left:22px}
+
+  .config-matrix{width:100%;border-collapse:collapse;font-size:13px}
+  .config-matrix th{padding:10px 8px;font-weight:600;font-size:12px;color:var(--text2);text-align:center;position:sticky;top:0;background:var(--surface);border-bottom:2px solid var(--border);white-space:nowrap}
+  .config-matrix th:first-child{text-align:left;min-width:100px}
+  .config-matrix td{padding:8px;text-align:center;border-bottom:1px solid var(--border)}
+  .config-matrix td:first-child{text-align:left;font-weight:500;font-size:14px;padding-left:16px}
+  .config-matrix tr:last-child td{border-bottom:none}
+  .config-toggle{width:36px;height:20px;border-radius:10px;background:var(--border);position:relative;cursor:pointer;transition:background 0.2s;display:inline-block}
+  .config-toggle.on{background:var(--green)}
+  .config-toggle::after{content:'';position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;top:2px;left:2px;transition:left 0.2s;box-shadow:0 1px 2px rgba(0,0,0,0.15)}
+  .config-toggle.on::after{left:18px}
+  .config-toggle.saving{opacity:0.4;pointer-events:none}
+  .config-section{padding:16px;background:var(--surface);border-bottom:1px solid var(--border)}
+  .config-section-title{font-size:15px;font-weight:700;margin-bottom:4px}
+  .config-section-sub{font-size:12px;color:var(--text3)}
 </style>
 </head>
 <body>
@@ -243,6 +258,7 @@
   <div id="pricePage" class="page"></div>
   <div id="fulfillPage" class="page"></div>
   <div id="itemsPage" class="page"></div>
+  <div id="configPage" class="page"></div>
 </div>
 
 <!-- Cart -->
@@ -329,7 +345,7 @@ async function initApp() {
 function buildTabs() {
   const tabs = [];
   if (currentUser.role === 'admin') {
-    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'price', label: '價格審核' }, { id: 'items', label: '品項管理' });
+    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'price', label: '價格審核' }, { id: 'items', label: '品項管理' }, { id: 'config', label: '配送設定' });
   } else if (currentUser.role === 'kitchen') {
     tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' });
   } else {
@@ -375,7 +391,7 @@ async function loadData() {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('#mainTabs .view-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['order', 'receive', 'history', 'summary', 'price', 'fulfill', 'items'].forEach(id => {
+  ['order', 'receive', 'history', 'summary', 'price', 'fulfill', 'items', 'config'].forEach(id => {
     const el = document.getElementById(id + 'Page');
     if (el) el.classList.toggle('active', id === tab);
   });
@@ -386,6 +402,7 @@ function switchTab(tab) {
   if (tab === 'price') loadPriceReviews();
   if (tab === 'fulfill') loadFulfill();
   if (tab === 'items') loadItemsManagement();
+  if (tab === 'config') loadConfig();
 }
 
 // ══════════ HELPERS ══════════
@@ -961,6 +978,65 @@ async function importCSV(input) {
   showModal('📥', '匯入完成', `成功 ${success} 項${fail ? '，失敗 ' + fail + ' 項' : ''}`);
   await loadData();
   loadItemsManagement();
+}
+
+// ══════════ CONFIG (配送設定) ══════════
+async function loadConfig() {
+  const el = document.getElementById('configPage');
+  const stores = allStores.filter(s => s.type === 'store');
+  const suppliers = allSuppliers;
+
+  const { data: mappings } = await sb.from('store_suppliers').select('*');
+  const mapSet = {};
+  (mappings || []).forEach(m => { mapSet[m.store_id + '|' + m.supplier_id] = m; });
+
+  el.innerHTML = `
+    <div class="config-section">
+      <div class="config-section-title">門店 × 廠商配送設定</div>
+      <div class="config-section-sub">開啟 = 該門店可向此廠商叫貨，關閉 = 隱藏不顯示</div>
+    </div>
+    <div style="overflow-x:auto;background:var(--surface)">
+      <table class="config-matrix">
+        <thead><tr>
+          <th></th>
+          ${suppliers.map(s => `<th>${s.name}</th>`).join('')}
+        </tr></thead>
+        <tbody>
+          ${stores.map(store => `<tr>
+            <td>${store.name}</td>
+            ${suppliers.map(sup => {
+              const rec = mapSet[store.id + '|' + sup.id];
+              const isOn = rec ? rec.is_active : false;
+              return `<td><div class="config-toggle ${isOn ? 'on' : ''}" data-store="${store.id}" data-supplier="${sup.id}" data-record="${rec?.id || ''}" onclick="toggleStoreSupplier(this)"></div></td>`;
+            }).join('')}
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+async function toggleStoreSupplier(el) {
+  if (el.classList.contains('saving')) return;
+  el.classList.add('saving');
+
+  const storeId = el.dataset.store;
+  const supplierId = el.dataset.supplier;
+  const recordId = el.dataset.record;
+  const newState = !el.classList.contains('on');
+
+  try {
+    if (recordId) {
+      await sb.from('store_suppliers').update({ is_active: newState }).eq('id', recordId);
+    } else {
+      const { data } = await sb.from('store_suppliers').insert({ store_id: storeId, supplier_id: supplierId, is_active: newState }).select().single();
+      if (data) el.dataset.record = data.id;
+    }
+    el.classList.toggle('on', newState);
+  } catch (err) {
+    alert('更新失敗：' + (err.message || err));
+  } finally {
+    el.classList.remove('saving');
+  }
 }
 
 // ── Enter key ──

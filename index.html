@@ -990,7 +990,7 @@ function loadSuppliers() {
   el.innerHTML = `
     <div class="mgmt-bar"><span class="count">${allSuppliers.length} 家廠商</span><button class="add-btn" onclick="openSupplierForm()">＋ 新增廠商</button></div>
     ${allSuppliers.map(s => `<div class="mgmt-item" onclick="openSupplierForm('${s.id}')">
-      <div class="mi-info"><div class="mi-name">${s.name}</div><div class="mi-sub">${types[s.type] || s.type}${s.note ? ' · ' + s.note : ''}</div></div>
+      <div class="mi-info"><div class="mi-name">${s.name}</div><div class="mi-sub">${types[s.type] || s.type} · ${s.payment_method === 'monthly' ? '月結' : '付現'}${s.note ? ' · ' + s.note : ''}</div></div>
       <div class="mi-arrow">›</div>
     </div>`).join('') || '<div class="empty-state"><div class="icon">🏪</div><div class="msg">沒有廠商</div></div>'}`;
 }
@@ -999,6 +999,7 @@ function openSupplierForm(supId) {
   const sup = supId ? allSuppliers.find(s => s.id === supId) : null;
   const isEdit = !!sup;
   const types = [{ v: 'external', l: '外部廠商' }, { v: 'central_kitchen', l: '中央廚房' }];
+  const payments = [{ v: 'cash', l: '付現' }, { v: 'monthly', l: '月結' }];
 
   document.getElementById('formOverlay')?.remove();
 
@@ -1013,6 +1014,8 @@ function openSupplierForm(supId) {
         <div class="form-group"><label class="form-label">廠商名稱 *</label><input class="form-input" id="fsName" value="${sup?.name || ''}" placeholder="例：可果坊"></div>
         <div class="form-group"><label class="form-label">類型</label>
           <div class="chip-group" id="fsType">${types.map(t => `<span class="chip ${(sup?.type || 'external') === t.v ? 'active' : ''}" data-val="${t.v}" onclick="selectChip('fsType',this)">${t.l}</span>`).join('')}</div></div>
+        <div class="form-group"><label class="form-label">付款方式</label>
+          <div class="chip-group" id="fsPayment">${payments.map(p => `<span class="chip ${(sup?.payment_method || 'cash') === p.v ? 'active' : ''}" data-val="${p.v}" onclick="selectChip('fsPayment',this)">${p.l}</span>`).join('')}</div></div>
         <div class="form-group"><label class="form-label">備註</label><input class="form-input" id="fsNote" value="${sup?.note || ''}" placeholder="供應品項說明（選填）"></div>
         <button class="form-save" onclick="saveSupplier('${supId || ''}')">${isEdit ? '儲存變更' : '新增廠商'}</button>
         ${isEdit ? `<button class="form-delete" onclick="deleteSupplier('${supId}')">停用此廠商</button>` : ''}
@@ -1031,6 +1034,7 @@ async function saveSupplier(supId) {
   const data = {
     name,
     type: document.querySelector('#fsType .chip.active')?.dataset.val || 'external',
+    payment_method: document.querySelector('#fsPayment .chip.active')?.dataset.val || 'cash',
     note: document.getElementById('fsNote').value.trim() || null,
     is_active: true
   };

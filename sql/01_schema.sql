@@ -44,11 +44,16 @@ COMMENT ON TABLE inventory.users IS '系統使用者';
 -- ============================================
 -- 3. 廠商 suppliers
 -- ============================================
+-- payment_method: 若已存在表需加欄位:
+-- ALTER TABLE inventory.suppliers ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'cash' CHECK (payment_method IN ('cash', 'monthly'));
+
 CREATE TABLE inventory.suppliers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   type TEXT NOT NULL DEFAULT 'external'
     CHECK (type IN ('external', 'central_kitchen')),
+  payment_method TEXT NOT NULL DEFAULT 'cash'
+    CHECK (payment_method IN ('cash', 'monthly')),
   contact_name TEXT,
   phone TEXT,
   line_id TEXT,

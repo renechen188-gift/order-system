@@ -259,6 +259,7 @@
   <div id="fulfillPage" class="page"></div>
   <div id="itemsPage" class="page"></div>
   <div id="configPage" class="page"></div>
+  <div id="suppliersPage" class="page"></div>
 </div>
 
 <!-- Cart -->
@@ -345,7 +346,7 @@ async function initApp() {
 function buildTabs() {
   const tabs = [];
   if (currentUser.role === 'admin') {
-    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'price', label: '價格審核' }, { id: 'items', label: '品項管理' }, { id: 'config', label: '配送設定' });
+    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'price', label: '價格審核' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
   } else if (currentUser.role === 'kitchen') {
     tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' });
   } else {
@@ -391,7 +392,7 @@ async function loadData() {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('#mainTabs .view-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['order', 'receive', 'history', 'summary', 'price', 'fulfill', 'items', 'config'].forEach(id => {
+  ['order', 'receive', 'history', 'summary', 'price', 'fulfill', 'items', 'suppliers', 'config'].forEach(id => {
     const el = document.getElementById(id + 'Page');
     if (el) el.classList.toggle('active', id === tab);
   });
@@ -402,6 +403,7 @@ function switchTab(tab) {
   if (tab === 'price') loadPriceReviews();
   if (tab === 'fulfill') loadFulfill();
   if (tab === 'items') loadItemsManagement();
+  if (tab === 'suppliers') loadSuppliers();
   if (tab === 'config') loadConfig();
 }
 
@@ -978,6 +980,92 @@ async function importCSV(input) {
   showModal('📥', '匯入完成', `成功 ${success} 項${fail ? '，失敗 ' + fail + ' 項' : ''}`);
   await loadData();
   loadItemsManagement();
+}
+
+// ══════════ SUPPLIERS (廠商管理) ══════════
+function loadSuppliers() {
+  const el = document.getElementById('suppliersPage');
+  const types = { external: '外部廠商', central_kitchen: '中央廚房' };
+
+  el.innerHTML = `
+    <div class="mgmt-bar"><span class="count">${allSuppliers.length} 家廠商</span><button class="add-btn" onclick="openSupplierForm()">＋ 新增廠商</button></div>
+    ${allSuppliers.map(s => `<div class="mgmt-item" onclick="openSupplierForm('${s.id}')">
+      <div class="mi-info"><div class="mi-name">${s.name}</div><div class="mi-sub">${types[s.type] || s.type}${s.note ? ' · ' + s.note : ''}</div></div>
+      <div class="mi-arrow">›</div>
+    </div>`).join('') || '<div class="empty-state"><div class="icon">🏪</div><div class="msg">沒有廠商</div></div>'}`;
+}
+
+function openSupplierForm(supId) {
+  const sup = supId ? allSuppliers.find(s => s.id === supId) : null;
+  const isEdit = !!sup;
+  const types = [{ v: 'external', l: '外部廠商' }, { v: 'central_kitchen', l: '中央廚房' }];
+
+  document.getElementById('formOverlay')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'formOverlay';
+  overlay.className = 'form-overlay show';
+  overlay.innerHTML = `
+    <div class="form-sheet">
+      <div class="form-handle"></div>
+      <div class="form-header"><div class="form-title">${isEdit ? '編輯廠商' : '新增廠商'}</div><button class="form-close" onclick="closeSupplierForm()">✕</button></div>
+      <div class="form-body">
+        <div class="form-group"><label class="form-label">廠商名稱 *</label><input class="form-input" id="fsName" value="${sup?.name || ''}" placeholder="例：可果坊"></div>
+        <div class="form-group"><label class="form-label">類型</label>
+          <div class="chip-group" id="fsType">${types.map(t => `<span class="chip ${(sup?.type || 'external') === t.v ? 'active' : ''}" data-val="${t.v}" onclick="selectChip('fsType',this)">${t.l}</span>`).join('')}</div></div>
+        <div class="form-group"><label class="form-label">備註</label><input class="form-input" id="fsNote" value="${sup?.note || ''}" placeholder="供應品項說明（選填）"></div>
+        <button class="form-save" onclick="saveSupplier('${supId || ''}')">${isEdit ? '儲存變更' : '新增廠商'}</button>
+        ${isEdit ? `<button class="form-delete" onclick="deleteSupplier('${supId}')">停用此廠商</button>` : ''}
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeSupplierForm(); });
+}
+
+function closeSupplierForm() { document.getElementById('formOverlay')?.remove(); }
+
+async function saveSupplier(supId) {
+  const name = document.getElementById('fsName').value.trim();
+  if (!name) { alert('請填寫廠商名稱'); return; }
+
+  const data = {
+    name,
+    type: document.querySelector('#fsType .chip.active')?.dataset.val || 'external',
+    note: document.getElementById('fsNote').value.trim() || null,
+    is_active: true
+  };
+
+  try {
+    let savedId = supId;
+    if (supId) {
+      const { error } = await sb.from('suppliers').update(data).eq('id', supId);
+      if (error) throw error;
+    } else {
+      const { data: newSup, error } = await sb.from('suppliers').insert(data).select().single();
+      if (error) throw error;
+      savedId = newSup.id;
+
+      // Auto-create store_suppliers for all stores (default on)
+      const stores = allStores.filter(s => s.type === 'store');
+      if (stores.length) {
+        await sb.from('store_suppliers').insert(stores.map(s => ({ store_id: s.id, supplier_id: savedId, is_active: true })));
+      }
+    }
+
+    closeSupplierForm();
+    await loadData();
+    loadSuppliers();
+  } catch (err) { alert('儲存失敗：' + (err.message || err)); }
+}
+
+async function deleteSupplier(supId) {
+  if (!confirm('確定要停用此廠商？停用後門店將無法向此廠商叫貨。')) return;
+  try {
+    await sb.from('suppliers').update({ is_active: false }).eq('id', supId);
+    closeSupplierForm();
+    await loadData();
+    loadSuppliers();
+  } catch (err) { alert('停用失敗：' + (err.message || err)); }
 }
 
 // ══════════ CONFIG (配送設定) ══════════

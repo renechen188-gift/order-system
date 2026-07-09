@@ -227,7 +227,7 @@ CREATE TABLE inventory.inventory_counts (
   store_id UUID NOT NULL REFERENCES inventory.stores(id),
   item_id UUID NOT NULL REFERENCES inventory.items(id),
   count_period TEXT,                     -- '2026-07-上' / '2026-07-下'
-  system_qty NUMERIC(10,2) NOT NULL,
+  system_qty NUMERIC(10,2) NOT NULL DEFAULT 0,
   actual_qty NUMERIC(10,2) NOT NULL,
   diff NUMERIC(10,2) GENERATED ALWAYS AS (actual_qty - system_qty) STORED,
   counted_by UUID NOT NULL REFERENCES inventory.users(id),
@@ -245,7 +245,7 @@ CREATE TABLE inventory.count_sheets (
   store_id UUID NOT NULL REFERENCES inventory.stores(id),
   period TEXT NOT NULL,                  -- '2026-07-上'
   status TEXT NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending', 'in_progress', 'completed')),
+    CHECK (status IN ('pending', 'in_progress', 'completed', 'approved')),
   created_by UUID REFERENCES inventory.users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   completed_at TIMESTAMPTZ,

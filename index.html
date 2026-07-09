@@ -222,6 +222,27 @@
   .config-section{padding:16px;background:var(--surface);border-bottom:1px solid var(--border)}
   .config-section-title{font-size:15px;font-weight:700;margin-bottom:4px}
   .config-section-sub{font-size:12px;color:var(--text3)}
+
+  .count-period{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between;cursor:pointer}
+  .count-period:active{background:var(--surface2)}
+  .count-period-info{flex:1}
+  .count-period-title{font-size:15px;font-weight:600}
+  .count-period-sub{font-size:12px;color:var(--text3);margin-top:2px}
+  .count-status{font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px}
+  .count-status.pending{background:var(--yellow-bg);color:var(--yellow)}
+  .count-status.in_progress{background:var(--purple-bg);color:var(--purple)}
+  .count-status.completed{background:#e0f2fe;color:#0369a1}
+  .count-status.approved{background:var(--green-bg);color:var(--green)}
+  .count-item{display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface);gap:10px}
+  .count-item-info{flex:1;min-width:0}
+  .count-item-name{font-size:14px;font-weight:500}
+  .count-item-sub{font-size:11px;color:var(--text3);margin-top:1px}
+  .count-input{width:70px;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-size:16px;text-align:center;font-family:inherit;outline:none}
+  .count-input:focus{border-color:var(--accent)}
+  .count-unit{font-size:12px;color:var(--text3);min-width:24px}
+  .count-summary{padding:16px;background:var(--accent-light);border-bottom:1px solid var(--border)}
+  .count-summary-row{display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px}
+  .count-summary-total{font-weight:700;font-size:16px;color:var(--accent2)}
 </style>
 </head>
 <body>
@@ -259,6 +280,7 @@
   <div id="fulfillPage" class="page"></div>
   <div id="itemsPage" class="page"></div>
   <div id="configPage" class="page"></div>
+  <div id="countPage" class="page"></div>
   <div id="suppliersPage" class="page"></div>
 </div>
 
@@ -346,11 +368,11 @@ async function initApp() {
 function buildTabs() {
   const tabs = [];
   if (currentUser.role === 'admin') {
-    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'price', label: '價格審核' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
+    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'price', label: '價格審核' }, { id: 'count', label: '盤點' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
   } else if (currentUser.role === 'kitchen') {
     tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' });
   } else {
-    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' });
+    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'count', label: '盤點' });
   }
 
   document.getElementById('mainTabs').innerHTML = tabs.map((t, i) =>
@@ -392,7 +414,7 @@ async function loadData() {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('#mainTabs .view-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['order', 'receive', 'history', 'summary', 'price', 'fulfill', 'items', 'suppliers', 'config'].forEach(id => {
+  ['order', 'receive', 'history', 'summary', 'price', 'fulfill', 'items', 'suppliers', 'config', 'count'].forEach(id => {
     const el = document.getElementById(id + 'Page');
     if (el) el.classList.toggle('active', id === tab);
   });
@@ -403,6 +425,7 @@ function switchTab(tab) {
   if (tab === 'price') loadPriceReviews();
   if (tab === 'fulfill') loadFulfill();
   if (tab === 'items') loadItemsManagement();
+  if (tab === 'count') loadCount();
   if (tab === 'suppliers') loadSuppliers();
   if (tab === 'config') loadConfig();
 }
@@ -980,6 +1003,250 @@ async function importCSV(input) {
   showModal('📥', '匯入完成', `成功 ${success} 項${fail ? '，失敗 ' + fail + ' 項' : ''}`);
   await loadData();
   loadItemsManagement();
+}
+
+// ══════════ COUNT (盤點) ══════════
+const COUNT_STATUS_LABEL = { pending: '待盤點', in_progress: '盤點中', completed: '已送出', approved: '已核准' };
+
+async function loadCount() {
+  if (currentUser.role === 'admin') return loadCountAdmin();
+  return loadCountStore();
+}
+
+// ── Admin: 盤點管理 ──
+async function loadCountAdmin() {
+  const el = document.getElementById('countPage');
+  const { data: sheets } = await sb.from('count_sheets').select('*, stores(name)').order('created_at', { ascending: false });
+  const periods = {};
+  (sheets || []).forEach(s => {
+    if (!periods[s.period]) periods[s.period] = [];
+    periods[s.period].push(s);
+  });
+  const periodKeys = Object.keys(periods).sort().reverse();
+
+  el.innerHTML = `
+    <div class="mgmt-bar"><span class="count">${periodKeys.length} 個盤點期</span><button class="add-btn" onclick="openCountPeriod()">＋ 開盤</button></div>
+    ${periodKeys.length ? periodKeys.map(p => {
+      const ss = periods[p];
+      const done = ss.filter(s => s.status === 'approved').length;
+      const total = ss.length;
+      return `<div class="count-period" onclick="viewCountPeriod('${p}')">
+        <div class="count-period-info">
+          <div class="count-period-title">${formatPeriod(p)}</div>
+          <div class="count-period-sub">${done}/${total} 店已核准</div>
+        </div>
+        <div class="mi-arrow">›</div>
+      </div>`;
+    }).join('') : '<div class="empty-state"><div class="icon">📋</div><div class="msg">尚無盤點紀錄</div><div class="msg" style="font-size:12px;color:var(--text3)">點右上角「開盤」建立新的盤點期</div></div>'}`;
+}
+
+function formatPeriod(p) {
+  const [y, m, half] = p.split('-');
+  return `${y}年${parseInt(m)}月${half === '上' ? '月中' : '月底'}`;
+}
+
+function getCurrentPeriod() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const half = now.getDate() <= 15 ? '上' : '下';
+  return `${y}-${m}-${half}`;
+}
+
+async function openCountPeriod() {
+  const period = prompt('盤點期別（格式：2026-07-上 或 2026-07-下）', getCurrentPeriod());
+  if (!period || !/^\d{4}-\d{2}-(上|下)$/.test(period)) return;
+
+  const stores = allStores.filter(s => s.type === 'store');
+  const existing = await sb.from('count_sheets').select('id').eq('period', period);
+  if (existing.data?.length) { alert('此期別已存在'); return; }
+
+  try {
+    const inserts = stores.map(s => ({ store_id: s.id, period, status: 'pending', created_by: currentUser.id }));
+    const { error } = await sb.from('count_sheets').insert(inserts);
+    if (error) throw error;
+    loadCountAdmin();
+  } catch (err) { alert('開盤失敗：' + (err.message || err)); }
+}
+
+async function viewCountPeriod(period) {
+  const el = document.getElementById('countPage');
+  const { data: sheets } = await sb.from('count_sheets').select('*, stores(name)').eq('period', period).order('store_id');
+
+  el.innerHTML = `
+    <div class="config-section">
+      <div style="display:flex;align-items:center;gap:8px"><button style="background:none;border:none;font-size:18px;cursor:pointer" onclick="loadCountAdmin()">←</button><div class="config-section-title">${formatPeriod(period)}</div></div>
+      <div class="config-section-sub">各門店盤點進度</div>
+    </div>
+    ${(sheets || []).map(s => `<div class="count-period" onclick="reviewCountSheet('${s.id}','${period}')">
+      <div class="count-period-info">
+        <div class="count-period-title">${s.stores?.name || '—'}</div>
+        <div class="count-period-sub">${COUNT_STATUS_LABEL[s.status]}</div>
+      </div>
+      <span class="count-status ${s.status}">${COUNT_STATUS_LABEL[s.status]}</span>
+    </div>`).join('')}`;
+}
+
+async function reviewCountSheet(sheetId, period) {
+  const el = document.getElementById('countPage');
+  const { data: sheet } = await sb.from('count_sheets').select('*, stores(name)').eq('id', sheetId).single();
+  if (!sheet) return;
+
+  const { data: counts } = await sb.from('inventory_counts').select('*').eq('store_id', sheet.store_id).eq('count_period', period);
+  const countMap = {};
+  (counts || []).forEach(c => { countMap[c.item_id] = c; });
+
+  const items = allItems.filter(i => i.needs_count);
+  let totalValue = 0;
+  items.forEach(i => { if (countMap[i.id]) totalValue += (countMap[i.id].actual_qty || 0) * (i.purchase_price || 0); });
+
+  const hasData = counts && counts.length > 0;
+  const canApprove = sheet.status === 'completed';
+
+  el.innerHTML = `
+    <div class="config-section">
+      <div style="display:flex;align-items:center;gap:8px"><button style="background:none;border:none;font-size:18px;cursor:pointer" onclick="viewCountPeriod('${period}')">←</button><div class="config-section-title">${sheet.stores?.name} — ${formatPeriod(period)}</div></div>
+      <div class="config-section-sub">狀態：${COUNT_STATUS_LABEL[sheet.status]}</div>
+    </div>
+    ${hasData ? `<div class="count-summary">
+      <div class="count-summary-row"><span>盤點品項</span><span>${counts.length} 項</span></div>
+      <div class="count-summary-row count-summary-total"><span>盤存金額</span><span>$${totalValue.toLocaleString()}</span></div>
+    </div>` : ''}
+    ${items.map(item => {
+      const c = countMap[item.id];
+      const val = c ? (c.actual_qty * (item.purchase_price || 0)) : 0;
+      return `<div class="count-item">
+        <div class="count-item-info"><div class="count-item-name">${item.name}</div><div class="count-item-sub">${item.category} · $${item.purchase_price || 0}/${item.unit}</div></div>
+        <div style="text-align:right"><div style="font-size:16px;font-weight:600">${c ? c.actual_qty : '—'}</div><div style="font-size:11px;color:var(--text3)">${c ? '$' + val.toLocaleString() : ''}</div></div>
+      </div>`;
+    }).join('')}
+    ${canApprove ? `<div style="padding:16px"><button class="form-save" onclick="approveSheet('${sheetId}','${period}')">核准此盤點</button></div>` : ''}
+    ${sheet.status === 'approved' ? '<div style="padding:16px;text-align:center;color:var(--green);font-weight:600">✓ 已核准</div>' : ''}`;
+}
+
+async function approveSheet(sheetId, period) {
+  if (!confirm('確定核准此門店盤點？核准後數字將鎖定。')) return;
+  try {
+    const { error } = await sb.from('count_sheets').update({ status: 'approved', completed_at: new Date().toISOString() }).eq('id', sheetId);
+    if (error) throw error;
+    reviewCountSheet(sheetId, period);
+  } catch (err) { alert('核准失敗：' + (err.message || err)); }
+}
+
+// ── Store: 門店盤點 ──
+async function loadCountStore() {
+  const el = document.getElementById('countPage');
+  const { data: sheets } = await sb.from('count_sheets').select('*').eq('store_id', currentUser.store_id).order('created_at', { ascending: false });
+
+  el.innerHTML = `
+    <div class="mgmt-bar"><span class="count">${(sheets || []).length} 個盤點期</span></div>
+    ${(sheets || []).map(s => `<div class="count-period" onclick="${s.status === 'approved' ? `viewStoreCountReadonly('${s.id}','${s.period}')` : `openStoreCount('${s.id}','${s.period}')`}">
+      <div class="count-period-info">
+        <div class="count-period-title">${formatPeriod(s.period)}</div>
+        <div class="count-period-sub">${s.status === 'pending' ? '尚未盤點，點此開始' : s.status === 'in_progress' ? '盤點中，點此繼續' : s.status === 'completed' ? '已送出，等待審核' : '已核准'}</div>
+      </div>
+      <span class="count-status ${s.status}">${COUNT_STATUS_LABEL[s.status]}</span>
+    </div>`).join('') || '<div class="empty-state"><div class="icon">📋</div><div class="msg">目前沒有盤點任務</div></div>'}`;
+}
+
+async function openStoreCount(sheetId, period) {
+  const el = document.getElementById('countPage');
+  const items = allItems.filter(i => i.needs_count);
+
+  const { data: existing } = await sb.from('inventory_counts').select('*').eq('store_id', currentUser.store_id).eq('count_period', period);
+  const saved = {};
+  (existing || []).forEach(c => { saved[c.item_id] = c; });
+
+  // Mark as in_progress
+  await sb.from('count_sheets').update({ status: 'in_progress' }).eq('id', sheetId).in('status', ['pending', 'in_progress']);
+
+  const cats = ['ALL', ...new Set(items.map(i => i.category))];
+  window._countSheetId = sheetId;
+  window._countPeriod = period;
+  window._countSaved = saved;
+  window._countCat = 'ALL';
+
+  renderStoreCount(el, items, cats);
+}
+
+function renderStoreCount(el, items, cats) {
+  const saved = window._countSaved;
+  const cat = window._countCat;
+  const filtered = cat === 'ALL' ? items : items.filter(i => i.category === cat);
+
+  el.innerHTML = `
+    <div class="config-section">
+      <div style="display:flex;align-items:center;gap:8px"><button style="background:none;border:none;font-size:18px;cursor:pointer" onclick="loadCountStore()">←</button><div class="config-section-title">${formatPeriod(window._countPeriod)}</div></div>
+      <div class="config-section-sub">填寫各品項實際庫存數量</div>
+    </div>
+    <div class="cat-filter" style="padding:10px 16px">${cats.map(c => `<button class="cat-btn ${cat === c ? 'active' : ''}" onclick="window._countCat='${c}';renderStoreCount(document.getElementById('countPage'),allItems.filter(i=>i.needs_count),${JSON.stringify(cats).replace(/"/g, "'")})">${c === 'ALL' ? '全部' : c}</button>`).join('')}</div>
+    <div class="count-bar" style="padding:6px 16px;font-size:12px;color:var(--text3)">${filtered.length} 項品項</div>
+    ${filtered.map(item => {
+      const s = saved[item.id];
+      return `<div class="count-item">
+        <div class="count-item-info"><div class="count-item-name">${item.name}</div><div class="count-item-sub">${item.category} · ${item.unit}${item.purchase_price ? ' · $' + item.purchase_price : ''}</div></div>
+        <input type="number" class="count-input" id="ci_${item.id}" value="${s ? s.actual_qty : ''}" placeholder="0" inputmode="decimal" min="0" step="0.5">
+        <div class="count-unit">${item.unit}</div>
+      </div>`;
+    }).join('')}
+    <div style="padding:16px"><button class="form-save" onclick="submitStoreCount()">送出盤點</button></div>`;
+}
+
+async function submitStoreCount() {
+  const items = allItems.filter(i => i.needs_count);
+  const rows = [];
+  let empty = 0;
+  items.forEach(item => {
+    const input = document.getElementById('ci_' + item.id);
+    if (!input) return;
+    const val = parseFloat(input.value);
+    if (isNaN(val)) { empty++; return; }
+    rows.push({ store_id: currentUser.store_id, item_id: item.id, count_period: window._countPeriod, system_qty: 0, actual_qty: val, counted_by: currentUser.id });
+  });
+
+  if (empty > 0 && !confirm(`有 ${empty} 項未填（將視為 0），確定送出？`)) return;
+  // Fill empty as 0
+  items.forEach(item => {
+    if (!rows.find(r => r.item_id === item.id)) {
+      rows.push({ store_id: currentUser.store_id, item_id: item.id, count_period: window._countPeriod, system_qty: 0, actual_qty: 0, counted_by: currentUser.id });
+    }
+  });
+
+  try {
+    // Delete old counts for this period/store then insert
+    await sb.from('inventory_counts').delete().eq('store_id', currentUser.store_id).eq('count_period', window._countPeriod);
+    const { error } = await sb.from('inventory_counts').insert(rows);
+    if (error) throw error;
+
+    await sb.from('count_sheets').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', window._countSheetId);
+    alert('盤點已送出！');
+    loadCountStore();
+  } catch (err) { alert('送出失敗：' + (err.message || err)); }
+}
+
+async function viewStoreCountReadonly(sheetId, period) {
+  const el = document.getElementById('countPage');
+  const items = allItems.filter(i => i.needs_count);
+  const { data: counts } = await sb.from('inventory_counts').select('*').eq('store_id', currentUser.store_id).eq('count_period', period);
+  const countMap = {};
+  (counts || []).forEach(c => { countMap[c.item_id] = c; });
+
+  let totalValue = 0;
+  items.forEach(i => { if (countMap[i.id]) totalValue += (countMap[i.id].actual_qty || 0) * (i.purchase_price || 0); });
+
+  el.innerHTML = `
+    <div class="config-section">
+      <div style="display:flex;align-items:center;gap:8px"><button style="background:none;border:none;font-size:18px;cursor:pointer" onclick="loadCountStore()">←</button><div class="config-section-title">${formatPeriod(period)}</div></div>
+      <div class="config-section-sub">已核准 · 盤存金額 $${totalValue.toLocaleString()}</div>
+    </div>
+    ${items.map(item => {
+      const c = countMap[item.id];
+      return `<div class="count-item">
+        <div class="count-item-info"><div class="count-item-name">${item.name}</div><div class="count-item-sub">${item.category} · ${item.unit}</div></div>
+        <div style="text-align:right;font-size:16px;font-weight:600">${c ? c.actual_qty : 0}</div>
+        <div class="count-unit">${item.unit}</div>
+      </div>`;
+    }).join('')}`;
 }
 
 // ══════════ SUPPLIERS (廠商管理) ══════════

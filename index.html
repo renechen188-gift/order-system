@@ -353,11 +353,11 @@ async function initApp() {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appRoot').style.display = 'block';
 
-  const roleLabel = { admin: '管理者', store_manager: currentUser.stores?.name || '門店', kitchen: '信義央廚' };
+  const roleLabel = { admin: '管理者', store_manager: currentUser.stores?.name || '門店', kitchen: currentUser.stores?.name || '央廚' };
   document.getElementById('userLabel').textContent = roleLabel[currentUser.role] || currentUser.role;
 
   if (currentUser.role === 'kitchen') {
-    document.getElementById('appLogo').innerHTML = '麻媽家·涼三伯 <span>信義央廚</span>';
+    document.getElementById('appLogo').innerHTML = `麻媽家·涼三伯 <span>${currentUser.stores?.name || '央廚'}</span>`;
     document.getElementById('appLogo').classList.add('kitchen');
   }
 
@@ -370,7 +370,7 @@ function buildTabs() {
   if (currentUser.role === 'admin') {
     tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'price', label: '價格審核' }, { id: 'count', label: '盤點' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
   } else if (currentUser.role === 'kitchen') {
-    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' });
+    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'count', label: '盤點' });
   } else {
     tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'count', label: '盤點' });
   }
@@ -443,10 +443,11 @@ function getDefaultSupplier(itemId) { const maps = itemSupplierMap[itemId] || []
 
 // ══════════ ORDER PAGE ══════════
 function renderOrderPage() {
+  const kitchens = allSuppliers.filter(s => s.type === 'central_kitchen');
   document.getElementById('orderPage').innerHTML = `
     <div class="type-tabs">
       <button class="type-tab active" id="tabExt" onclick="setOrderType('external')"><div class="type-tab-icon">🏪</div><div class="type-tab-label">外部廠商</div><div class="type-tab-sub">肉、菜、蛋、米</div></button>
-      <button class="type-tab" id="tabInt" onclick="setOrderType('internal')"><div class="type-tab-icon">🏭</div><div class="type-tab-label">信義央廚</div><div class="type-tab-sub">涼皮、醬包、小菜</div></button>
+      ${kitchens.map((k, i) => `<button class="type-tab" id="tabKit${i}" onclick="setOrderType('internal','${k.id}')" data-kit="${k.id}"><div class="type-tab-icon">🏭</div><div class="type-tab-label">${k.name}</div><div class="type-tab-sub">${k.note || '半成品'}</div></button>`).join('')}
     </div>
     <div class="search-wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input type="search" class="search-input" id="searchInput" placeholder="搜尋品項…" oninput="renderItems()"></div>
     <div class="cat-filter" id="catFilter"></div>
@@ -456,10 +457,12 @@ function renderOrderPage() {
   renderItems();
 }
 
-function setOrderType(t) {
+let selectedKitchenId = null;
+function setOrderType(t, kitId) {
   orderType = t; currentCat = 'ALL';
+  selectedKitchenId = kitId || null;
   document.getElementById('tabExt').classList.toggle('active', t === 'external');
-  document.getElementById('tabInt').classList.toggle('active', t === 'internal');
+  document.querySelectorAll('[id^="tabKit"]').forEach(b => b.classList.toggle('active', t === 'internal' && b.dataset.kit === kitId));
   document.getElementById('searchInput').value = '';
   renderCats(); renderItems();
 }
@@ -474,8 +477,12 @@ function renderCats() {
 function renderItems() {
   const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
   const items = allItems.filter(item => {
-    if (getItemSupplierType(item) !== orderType) return false;
     const maps = itemSupplierMap[item.id] || [];
+    if (orderType === 'internal') {
+      if (!selectedKitchenId || !maps.some(m => m.supplier_id === selectedKitchenId)) return false;
+    } else {
+      if (getItemSupplierType(item) !== 'external') return false;
+    }
     if (!maps.some(m => storeSuppliers.includes(m.supplier_id)) && currentUser.role !== 'admin') return false;
     if (currentCat !== 'ALL' && item.category !== currentCat) return false;
     if (q && !item.name.toLowerCase().includes(q)) return false;
@@ -606,7 +613,7 @@ async function loadHistory() {
   if (!orders?.length) { el.innerHTML = '<div class="section-bar">叫貨紀錄</div><div class="empty-state"><div class="icon">📋</div><div class="msg">尚無叫貨紀錄</div></div>'; return; }
   const sm = { draft:'草稿', submitted:'已送出', confirmed:'已確認', received:'已收貨', cancelled:'已取消' };
   el.innerHTML = '<div class="section-bar">叫貨紀錄</div>' + orders.map(o =>
-    `<div class="history-item" onclick="showOrderDetail('${o.id}')" style="cursor:pointer"><div class="hi-top"><span class="hi-date">${o.order_date}</span><span class="hi-status ${o.status === 'received' ? 'status-done' : 'status-pending'}">${sm[o.status] || o.status}</span></div><div class="hi-detail">${o.order_type === 'internal' ? '🏭 信義央廚' : '🏪 外部廠商'} · ${o.order_items?.[0]?.count || 0} 項${o.stores ? ' · ' + o.stores.name : ''}<span style="float:right;color:var(--text3)">›</span></div></div>`
+    `<div class="history-item" onclick="showOrderDetail('${o.id}')" style="cursor:pointer"><div class="hi-top"><span class="hi-date">${o.order_date}</span><span class="hi-status ${o.status === 'received' ? 'status-done' : 'status-pending'}">${sm[o.status] || o.status}</span></div><div class="hi-detail">${o.order_type === 'internal' ? '🏭 央廚' : '🏪 外部廠商'} · ${o.order_items?.[0]?.count || 0} 項${o.stores ? ' · ' + o.stores.name : ''}<span style="float:right;color:var(--text3)">›</span></div></div>`
   ).join('');
 }
 
@@ -774,7 +781,7 @@ async function showOrderDetail(orderId) {
       <div style="padding:0 20px 8px;display:flex;gap:8px;align-items:center">
         <span class="card-status ${order.status === 'received' ? 'status-done' : 'status-pending'}">${sm[order.status] || order.status}</span>
         <span style="font-size:13px;color:var(--text2)">${order.stores?.name || ''}</span>
-        <span style="font-size:13px;color:var(--text3)">${order.order_type === 'internal' ? '信義央廚' : '外部廠商'}</span>
+        <span style="font-size:13px;color:var(--text3)">${order.order_type === 'internal' ? '央廚' : '外部廠商'}</span>
       </div>
       <div style="padding:0 20px 20px">
         ${Object.entries(supGroups).map(([supName, items]) => `
@@ -1057,7 +1064,7 @@ async function openCountPeriod() {
   const period = prompt('盤點期別（格式：2026-07-上 或 2026-07-下）', getCurrentPeriod());
   if (!period || !/^\d{4}-\d{2}-(上|下)$/.test(period)) return;
 
-  const stores = allStores.filter(s => s.type === 'store');
+  const stores = allStores.filter(s => s.type === 'store' || s.type === 'warehouse');
   const existing = await sb.from('count_sheets').select('id').eq('period', period);
   if (existing.data?.length) { alert('此期別已存在'); return; }
 

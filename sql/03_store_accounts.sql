@@ -14,7 +14,8 @@ DECLARE
     ['donghu@order.com',  'donghu888',  '麻媽家東湖店', 'store_manager'],
     ['dongke@order.com',  'dongke888',  '涼三伯東科店', 'store_manager'],
     ['liang@order.com',   'liang888',   '涼三伯東湖店', 'store_manager'],
-    ['kitchen@order.com', 'kitchen888', '信義央廚',     'kitchen']
+    ['kitchen@order.com', 'kitchen888', '信義央廚',     'kitchen'],
+    ['ajkit@order.com',   'ajkit888',   '安居央廚',     'kitchen']
   ];
   acct TEXT[];
 BEGIN

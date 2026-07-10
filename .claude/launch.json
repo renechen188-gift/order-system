@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "order-system",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "C:\\Users\\Rene\\Downloads\\order-system-repo-temp", "-l", "3847"],
+      "port": 3847
+    }
+  ]
+}

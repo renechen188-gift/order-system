@@ -243,6 +243,37 @@
   .count-summary{padding:16px;background:var(--accent-light);border-bottom:1px solid var(--border)}
   .count-summary-row{display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px}
   .count-summary-total{font-weight:700;font-size:16px;color:var(--accent2)}
+
+  .tf-card{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 16px;cursor:pointer}
+  .tf-card:active{background:var(--surface2)}
+  .tf-card-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .tf-card-stores{font-size:15px;font-weight:600}
+  .tf-card-arrow{color:var(--text3);margin:0 6px}
+  .tf-card-meta{font-size:12px;color:var(--text3)}
+  .tf-card-items{font-size:13px;color:var(--text2);margin-top:4px;line-height:1.5}
+  .tf-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;white-space:nowrap}
+  .tf-badge.requested{background:var(--yellow-bg);color:var(--yellow)}
+  .tf-badge.shipped{background:var(--purple-bg);color:var(--purple)}
+  .tf-badge.received{background:var(--green-bg);color:var(--green)}
+  .tf-badge.cancelled{background:var(--red-bg);color:var(--red)}
+  .tf-badge.transfer{background:#e0f2fe;color:#0369a1}
+  .tf-badge.return{background:#fce4ec;color:#c0392b}
+  .tf-type-tabs{display:flex;gap:8px;padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--border)}
+  .tf-type-tab{flex:1;padding:8px;border:1.5px solid var(--border);border-radius:10px;background:var(--surface);font-size:13px;font-weight:600;text-align:center;cursor:pointer;font-family:inherit;color:var(--text2)}
+  .tf-type-tab.active{border-color:var(--accent);background:var(--accent-light);color:var(--accent2)}
+  .tf-detail{padding:16px}
+  .tf-detail-section{background:var(--surface);border-radius:12px;padding:14px;margin-bottom:12px;border:1px solid var(--border)}
+  .tf-detail-title{font-size:13px;font-weight:600;color:var(--text2);margin-bottom:8px}
+  .tf-item-row{display:flex;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);gap:10px}
+  .tf-item-row:last-child{border-bottom:none}
+  .tf-item-name{flex:1;font-size:14px;font-weight:500}
+  .tf-item-qty{font-size:14px;font-weight:600;min-width:60px;text-align:right}
+  .tf-item-unit{font-size:12px;color:var(--text3);min-width:24px}
+  .tf-actions{display:flex;gap:8px;padding:16px}
+  .tf-actions button{flex:1;padding:12px;border-radius:10px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;border:none}
+  .tf-btn-primary{background:var(--accent);color:#fff}
+  .tf-btn-danger{background:none;color:var(--red);border:1px solid var(--red) !important}
+  .tf-btn-green{background:var(--green);color:#fff}
 </style>
 </head>
 <body>
@@ -280,6 +311,7 @@
   <div id="fulfillPage" class="page"></div>
   <div id="itemsPage" class="page"></div>
   <div id="configPage" class="page"></div>
+  <div id="transferPage" class="page"></div>
   <div id="countPage" class="page"></div>
   <div id="suppliersPage" class="page"></div>
 </div>
@@ -368,11 +400,11 @@ async function initApp() {
 function buildTabs() {
   const tabs = [];
   if (currentUser.role === 'admin') {
-    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'price', label: '價格審核' }, { id: 'count', label: '盤點' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
+    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'price', label: '價格審核' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
   } else if (currentUser.role === 'kitchen') {
-    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'count', label: '盤點' });
+    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
   } else {
-    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'count', label: '盤點' });
+    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
   }
 
   document.getElementById('mainTabs').innerHTML = tabs.map((t, i) =>
@@ -414,7 +446,7 @@ async function loadData() {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('#mainTabs .view-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['order', 'receive', 'history', 'summary', 'price', 'fulfill', 'items', 'suppliers', 'config', 'count'].forEach(id => {
+  ['order', 'receive', 'history', 'summary', 'price', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer'].forEach(id => {
     const el = document.getElementById(id + 'Page');
     if (el) el.classList.toggle('active', id === tab);
   });
@@ -426,6 +458,7 @@ function switchTab(tab) {
   if (tab === 'fulfill') loadFulfill();
   if (tab === 'items') loadItemsManagement();
   if (tab === 'count') loadCount();
+  if (tab === 'transfer') loadTransfer();
   if (tab === 'suppliers') loadSuppliers();
   if (tab === 'config') loadConfig();
 }
@@ -1254,6 +1287,202 @@ async function viewStoreCountReadonly(sheetId, period) {
         <div class="count-unit">${item.unit}</div>
       </div>`;
     }).join('')}`;
+}
+
+// ══════════ TRANSFERS (調撥) ══════════
+let transferFilter = 'all'; // all | pending | history
+
+async function loadTransfer() {
+  const el = document.getElementById('transferPage');
+  const isAdmin = currentUser.role === 'admin';
+  const myStoreId = currentUser.store_id;
+
+  let query = sb.from('transfers').select('*, transfer_items(*, items(*)), from_store:stores!transfers_from_store_id_fkey(name), to_store:stores!transfers_to_store_id_fkey(name), requester:users!transfers_requested_by_fkey(name)').order('requested_at', { ascending: false }).limit(50);
+
+  const { data: transfers, error } = await query;
+  if (error) { el.innerHTML = `<div class="empty-state"><div class="msg">載入失敗：${error.message}</div></div>`; return; }
+
+  const pending = (transfers || []).filter(t => ['requested', 'shipped'].includes(t.status));
+  const done = (transfers || []).filter(t => ['received', 'cancelled'].includes(t.status));
+  const shown = transferFilter === 'pending' ? pending : transferFilter === 'history' ? done : (transfers || []);
+
+  const statusLabel = { requested: '待出貨', shipped: '已出貨', received: '已收貨', cancelled: '已取消' };
+  const typeLabel = { transfer: '調撥', return: '歸還' };
+
+  el.innerHTML = `
+    <div class="mgmt-bar"><span class="count">${pending.length} 筆待處理</span><button class="add-btn" onclick="openTransferForm()">＋ 新增調撥</button></div>
+    <div class="tf-type-tabs">
+      <button class="tf-type-tab ${transferFilter === 'all' ? 'active' : ''}" onclick="transferFilter='all';loadTransfer()">全部 (${(transfers || []).length})</button>
+      <button class="tf-type-tab ${transferFilter === 'pending' ? 'active' : ''}" onclick="transferFilter='pending';loadTransfer()">待處理 (${pending.length})</button>
+      <button class="tf-type-tab ${transferFilter === 'history' ? 'active' : ''}" onclick="transferFilter='history';loadTransfer()">已完成 (${done.length})</button>
+    </div>
+    ${shown.length ? shown.map(t => {
+      const itemSummary = (t.transfer_items || []).map(ti => `${ti.items?.name || '?'} ×${ti.requested_qty}`).join('、');
+      return `<div class="tf-card" onclick="openTransferDetail('${t.id}')">
+        <div class="tf-card-top">
+          <div><span class="tf-card-stores">${t.from_store?.name || '?'}</span><span class="tf-card-arrow">→</span><span class="tf-card-stores">${t.to_store?.name || '?'}</span></div>
+          <div style="display:flex;gap:4px"><span class="tf-badge ${t.type}">${typeLabel[t.type] || t.type}</span><span class="tf-badge ${t.status}">${statusLabel[t.status] || t.status}</span></div>
+        </div>
+        <div class="tf-card-items">${itemSummary || '無品項'}</div>
+        <div class="tf-card-meta">${t.requester?.name || ''} · ${new Date(t.requested_at).toLocaleDateString('zh-TW')}${t.note ? ' · ' + t.note : ''}</div>
+      </div>`;
+    }).join('') : '<div class="empty-state"><div class="icon">📦</div><div class="msg">沒有調撥紀錄</div></div>'}`;
+}
+
+function openTransferForm() {
+  const myStoreId = currentUser.store_id;
+  const stores = allStores.filter(s => s.id !== myStoreId);
+  const items = allItems.filter(i => i.is_active !== false);
+
+  document.getElementById('formOverlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'formOverlay';
+  overlay.className = 'form-overlay show';
+  overlay.innerHTML = `
+    <div class="form-sheet">
+      <div class="form-handle"></div>
+      <div class="form-header"><div class="form-title">新增調撥單</div><button class="form-close" onclick="closeTransferForm()">✕</button></div>
+      <div class="form-body">
+        <div class="form-group"><label class="form-label">類型</label>
+          <div class="chip-group" id="tfType">
+            <span class="chip active" data-val="transfer" onclick="selectChip('tfType',this)">調撥（借出）</span>
+            <span class="chip" data-val="return" onclick="selectChip('tfType',this)">歸還</span>
+          </div></div>
+        <div class="form-group"><label class="form-label">對方門店 *</label>
+          <select class="form-input" id="tfTarget" style="padding:10px 14px">
+            <option value="">選擇門店</option>
+            ${stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+          </select></div>
+        <div class="form-group"><label class="form-label">品項</label>
+          <div id="tfItems">${items.map(item => `
+            <div class="tf-item-row">
+              <div class="tf-item-name">${item.name}<div style="font-size:11px;color:var(--text3)">${item.category} · ${item.unit}</div></div>
+              <input type="number" class="count-input" id="tfi_${item.id}" placeholder="0" inputmode="decimal" min="0" step="0.5" style="width:60px">
+              <div class="tf-item-unit">${item.unit}</div>
+            </div>`).join('')}
+          </div></div>
+        <div class="form-group"><label class="form-label">備註（選填）</label><input class="form-input" id="tfNote" placeholder="例：急需，請今天送"></div>
+        <button class="form-save" onclick="submitTransfer()">送出調撥單</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function closeTransferForm() { document.getElementById('formOverlay')?.remove(); }
+
+async function submitTransfer() {
+  const targetId = document.getElementById('tfTarget').value;
+  if (!targetId) { alert('請選擇對方門店'); return; }
+
+  const type = document.querySelector('#tfType .chip.active')?.dataset.val || 'transfer';
+  const note = document.getElementById('tfNote').value.trim();
+
+  const rows = [];
+  allItems.forEach(item => {
+    const input = document.getElementById('tfi_' + item.id);
+    if (!input) return;
+    const val = parseFloat(input.value);
+    if (!isNaN(val) && val > 0) rows.push({ item_id: item.id, requested_qty: val });
+  });
+
+  if (!rows.length) { alert('請至少填寫一項品項數量'); return; }
+
+  const fromId = type === 'transfer' ? currentUser.store_id : targetId;
+  const toId = type === 'transfer' ? targetId : currentUser.store_id;
+
+  const { data: tf, error } = await sb.from('transfers').insert({
+    from_store_id: fromId,
+    to_store_id: toId,
+    type,
+    requested_by: currentUser.id,
+    note: note || null
+  }).select().single();
+
+  if (error) { alert('建立失敗：' + error.message); return; }
+
+  const items = rows.map(r => ({ transfer_id: tf.id, ...r }));
+  const { error: itemErr } = await sb.from('transfer_items').insert(items);
+  if (itemErr) { alert('品項寫入失敗：' + itemErr.message); return; }
+
+  closeTransferForm();
+  alert('調撥單已送出！');
+  loadTransfer();
+}
+
+async function openTransferDetail(tfId) {
+  const { data: t, error } = await sb.from('transfers').select('*, transfer_items(*, items(*)), from_store:stores!transfers_from_store_id_fkey(name), to_store:stores!transfers_to_store_id_fkey(name), requester:users!transfers_requested_by_fkey(name)').eq('id', tfId).single();
+  if (error || !t) { alert('載入失敗'); return; }
+
+  const el = document.getElementById('transferPage');
+  const statusLabel = { requested: '待出貨', shipped: '已出貨', received: '已收貨', cancelled: '已取消' };
+  const typeLabel = { transfer: '調撥', return: '歸還' };
+  const isAdmin = currentUser.role === 'admin';
+  const myStoreId = currentUser.store_id;
+  const isFromStore = myStoreId === t.from_store_id;
+  const isToStore = myStoreId === t.to_store_id;
+
+  let actions = '';
+  if (t.status === 'requested') {
+    if (isFromStore || isAdmin) {
+      actions = `<div class="tf-actions">
+        <button class="tf-btn-primary" onclick="updateTransferStatus('${t.id}','shipped')">確認出貨</button>
+        <button class="tf-btn-danger" onclick="updateTransferStatus('${t.id}','cancelled')">取消</button>
+      </div>`;
+    }
+  } else if (t.status === 'shipped') {
+    if (isToStore || isAdmin) {
+      actions = `<div class="tf-actions">
+        <button class="tf-btn-green" onclick="updateTransferStatus('${t.id}','received')">確認收貨</button>
+      </div>`;
+    }
+  }
+
+  el.innerHTML = `
+    <div class="config-section">
+      <div style="display:flex;align-items:center;gap:8px"><button style="background:none;border:none;font-size:18px;cursor:pointer" onclick="loadTransfer()">←</button><div class="config-section-title">${typeLabel[t.type] || t.type}單</div></div>
+      <div class="config-section-sub"><span class="tf-badge ${t.status}">${statusLabel[t.status]}</span> · ${new Date(t.requested_at).toLocaleDateString('zh-TW')}</div>
+    </div>
+    <div class="tf-detail">
+      <div class="tf-detail-section">
+        <div class="tf-detail-title">調出方</div>
+        <div style="font-size:16px;font-weight:600">${t.from_store?.name || '?'}</div>
+      </div>
+      <div style="text-align:center;font-size:20px;color:var(--text3);margin:-4px 0">↓</div>
+      <div class="tf-detail-section">
+        <div class="tf-detail-title">調入方</div>
+        <div style="font-size:16px;font-weight:600">${t.to_store?.name || '?'}</div>
+      </div>
+      <div class="tf-detail-section">
+        <div class="tf-detail-title">品項明細</div>
+        ${(t.transfer_items || []).map(ti => `<div class="tf-item-row">
+          <div class="tf-item-name">${ti.items?.name || '?'}</div>
+          <div class="tf-item-qty">${ti.requested_qty}</div>
+          <div class="tf-item-unit">${ti.items?.unit || ''}</div>
+        </div>`).join('')}
+      </div>
+      ${t.note ? `<div class="tf-detail-section"><div class="tf-detail-title">備註</div><div style="font-size:14px">${t.note}</div></div>` : ''}
+      <div class="tf-detail-section">
+        <div class="tf-detail-title">申請人</div>
+        <div style="font-size:14px">${t.requester?.name || '?'}</div>
+      </div>
+      ${t.shipped_at ? `<div class="tf-detail-section"><div class="tf-detail-title">出貨時間</div><div style="font-size:14px">${new Date(t.shipped_at).toLocaleString('zh-TW')}</div></div>` : ''}
+      ${t.received_at ? `<div class="tf-detail-section"><div class="tf-detail-title">收貨時間</div><div style="font-size:14px">${new Date(t.received_at).toLocaleString('zh-TW')}</div></div>` : ''}
+    </div>
+    ${actions}`;
+}
+
+async function updateTransferStatus(tfId, newStatus) {
+  const confirmMsg = { shipped: '確認出貨？', received: '確認收貨？', cancelled: '確定取消此調撥單？' };
+  if (!confirm(confirmMsg[newStatus] || '確定？')) return;
+
+  const updates = { status: newStatus };
+  if (newStatus === 'shipped') updates.shipped_at = new Date().toISOString();
+  if (newStatus === 'received') updates.received_at = new Date().toISOString();
+
+  const { error } = await sb.from('transfers').update(updates).eq('id', tfId);
+  if (error) { alert('更新失敗：' + error.message); return; }
+  alert(newStatus === 'shipped' ? '已出貨' : newStatus === 'received' ? '已收貨' : '已取消');
+  loadTransfer();
 }
 
 // ══════════ SUPPLIERS (廠商管理) ══════════

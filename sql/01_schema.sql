@@ -261,6 +261,8 @@ CREATE TABLE inventory.transfers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   from_store_id UUID NOT NULL REFERENCES inventory.stores(id),
   to_store_id UUID NOT NULL REFERENCES inventory.stores(id),
+  type TEXT NOT NULL DEFAULT 'transfer'
+    CHECK (type IN ('transfer', 'return')),
   status TEXT NOT NULL DEFAULT 'requested'
     CHECK (status IN ('requested', 'approved', 'shipped', 'received', 'cancelled')),
   requested_by UUID NOT NULL REFERENCES inventory.users(id),

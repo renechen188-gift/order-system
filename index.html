@@ -62,6 +62,7 @@
   .oi-info{flex:1;min-width:0}
   .oi-name{font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .oi-spec{font-size:12px;color:var(--text3);margin-top:2px}
+  .oi-sup-select{font-size:11px;color:var(--accent2);background:var(--accent-light);border:1px solid var(--accent);border-radius:6px;padding:1px 4px;font-family:inherit;cursor:pointer;margin-left:4px;outline:none}
   .oi-unit-tag{display:inline-block;background:var(--surface2);border-radius:4px;padding:1px 6px;font-size:11px;color:var(--text2)}
   .oi-qty{display:flex;align-items:center;flex-shrink:0}
   .qty-btn{width:34px;height:34px;border:1.5px solid var(--border);background:var(--surface);font-size:18px;font-weight:500;color:var(--text2);cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;user-select:none}
@@ -507,6 +508,14 @@ function renderCats() {
   ).join('');
 }
 
+function getItemAvailableSuppliers(itemId) {
+  const maps = itemSupplierMap[itemId] || [];
+  const isAdmin = currentUser.role === 'admin';
+  return maps.filter(m => isAdmin || storeSuppliers.includes(m.supplier_id))
+    .map(m => ({ ...m, name: getSupplierName(m.supplier_id), price: allSuppliers.find(s => s.id === m.supplier_id)?.price }))
+    .filter(m => m.name);
+}
+
 function renderItems() {
   const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
   const items = allItems.filter(item => {
@@ -523,15 +532,20 @@ function renderItems() {
   });
   document.getElementById('countBar').textContent = `${items.length} 項品項`;
   document.getElementById('itemList').innerHTML = items.map(item => {
-    const defaultSup = (itemSupplierMap[item.id] || []).find(m => m.is_default) || (itemSupplierMap[item.id] || [])[0];
-    const qty = cart[item.id]?.qty || 0;
-    return `<div class="order-item ${qty ? 'in-cart' : ''}"><div class="oi-info"><div class="oi-name">${item.name}</div><div class="oi-spec"><span class="oi-unit-tag">${item.unit}</span> ${item.spec || ''} <span style="color:var(--text3);font-size:11px">· ${defaultSup ? getSupplierName(defaultSup.supplier_id) : ''}</span></div></div><div class="oi-qty"><button class="qty-btn minus" onclick="adj('${item.id}',-1)">−</button><input type="number" class="qty-input ${qty ? 'has-value' : ''}" value="${qty || ''}" placeholder="0" inputmode="decimal" onfocus="this.select()" onchange="setQty('${item.id}',this.value)"><button class="qty-btn plus" onclick="adj('${item.id}',1)">+</button></div></div>`;
+    const avail = getItemAvailableSuppliers(item.id);
+    const hasMulti = avail.length > 1 && orderType === 'external';
+    const cartItem = cart[item.id];
+    const qty = cartItem?.qty || 0;
+    const curSup = cartItem?.supplierId ? getSupplierName(cartItem.supplierId) : (avail.find(m => m.is_default) || avail[0])?.name || '';
+    return `<div class="order-item ${qty ? 'in-cart' : ''}"><div class="oi-info"><div class="oi-name">${item.name}</div><div class="oi-spec"><span class="oi-unit-tag">${item.unit}</span> ${item.spec || ''} ${hasMulti ? `<select class="oi-sup-select" onchange="pickSup('${item.id}',this.value)">${avail.map(s => `<option value="${s.supplier_id}" ${cartItem?.supplierId === s.supplier_id || (!cartItem && s.is_default) ? 'selected' : ''}>${s.name}${item.purchase_price ? '' : ''}</option>`).join('')}</select>` : `<span style="color:var(--text3);font-size:11px">· ${curSup}</span>`}</div></div><div class="oi-qty"><button class="qty-btn minus" onclick="adj('${item.id}',-1)">−</button><input type="number" class="qty-input ${qty ? 'has-value' : ''}" value="${qty || ''}" placeholder="0" inputmode="decimal" onfocus="this.select()" onchange="setQty('${item.id}',this.value)"><button class="qty-btn plus" onclick="adj('${item.id}',1)">+</button></div></div>`;
   }).join('') || '<div class="empty-state"><div class="icon">🔍</div><div class="msg">找不到品項</div></div>';
 }
 
 // ══════════ CART ══════════
-function adj(id, d) { const cur = cart[id]?.qty || 0; const n = Math.max(0, cur + d); if (!n) delete cart[id]; else cart[id] = { qty: n, supplierId: getDefaultSupplier(id) }; updFloat(); renderItems(); }
-function setQty(id, v) { const n = parseFloat(v) || 0; if (n <= 0) delete cart[id]; else cart[id] = { qty: n, supplierId: getDefaultSupplier(id) }; updFloat(); renderItems(); }
+function getCartSupplier(id) { return cart[id]?.supplierId || document.querySelector(`.order-item select[onchange*="'${id}'"]`)?.value || getDefaultSupplier(id); }
+function adj(id, d) { const cur = cart[id]?.qty || 0; const n = Math.max(0, cur + d); if (!n) delete cart[id]; else cart[id] = { qty: n, supplierId: getCartSupplier(id) }; updFloat(); renderItems(); }
+function setQty(id, v) { const n = parseFloat(v) || 0; if (n <= 0) delete cart[id]; else cart[id] = { qty: n, supplierId: getCartSupplier(id) }; updFloat(); renderItems(); }
+function pickSup(id, supId) { if (cart[id]) cart[id].supplierId = supId; }
 function updFloat() { const n = Object.keys(cart).length; document.getElementById('cartFloat').classList.toggle('hidden', n === 0 || currentTab !== 'order'); document.getElementById('cartBadge').textContent = n + ' 項'; }
 
 function openCart() { document.getElementById('appRoot').style.display = 'none'; document.getElementById('cartPage').style.display = 'block'; document.getElementById('cartFloat').classList.add('hidden'); renderCart(); }

@@ -269,6 +269,7 @@ CREATE TABLE inventory.transfers (
   requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   shipped_at TIMESTAMPTZ,
   received_at TIMESTAMPTZ,
+  parent_id UUID REFERENCES inventory.transfers(id),
   note TEXT,
   CHECK (from_store_id <> to_store_id)
 );

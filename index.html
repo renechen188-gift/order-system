@@ -1290,38 +1290,59 @@ async function viewStoreCountReadonly(sheetId, period) {
 }
 
 // ══════════ TRANSFERS (調撥) ══════════
-let transferFilter = 'all'; // all | pending | history
+let transferFilter = 'all';
 
 async function loadTransfer() {
   const el = document.getElementById('transferPage');
-  const isAdmin = currentUser.role === 'admin';
-  const myStoreId = currentUser.store_id;
 
-  let query = sb.from('transfers').select('*, transfer_items(*, items(*)), from_store:stores!transfers_from_store_id_fkey(name), to_store:stores!transfers_to_store_id_fkey(name), requester:users!transfers_requested_by_fkey(name)').order('requested_at', { ascending: false }).limit(50);
-
-  const { data: transfers, error } = await query;
+  const { data: transfers, error } = await sb.from('transfers').select('*, transfer_items(*, items(*)), from_store:stores!transfers_from_store_id_fkey(name), to_store:stores!transfers_to_store_id_fkey(name), requester:users!transfers_requested_by_fkey(name)').is('parent_id', null).order('requested_at', { ascending: false }).limit(50);
   if (error) { el.innerHTML = `<div class="empty-state"><div class="msg">載入失敗：${error.message}</div></div>`; return; }
 
-  const pending = (transfers || []).filter(t => ['requested', 'shipped'].includes(t.status));
-  const done = (transfers || []).filter(t => ['received', 'cancelled'].includes(t.status));
-  const shown = transferFilter === 'pending' ? pending : transferFilter === 'history' ? done : (transfers || []);
+  const all = transfers || [];
+  // Load return info for received transfers
+  const receivedIds = all.filter(t => t.status === 'received').map(t => t.id);
+  let returnMap = {};
+  if (receivedIds.length) {
+    const { data: returns } = await sb.from('transfers').select('parent_id, status, transfer_items(item_id, requested_qty)').in('parent_id', receivedIds).eq('type', 'return');
+    (returns || []).forEach(r => {
+      if (!returnMap[r.parent_id]) returnMap[r.parent_id] = [];
+      returnMap[r.parent_id].push(r);
+    });
+  }
+
+  function getReturnStatus(t) {
+    if (t.status !== 'received' || t.type === 'return') return null;
+    const rets = returnMap[t.id] || [];
+    if (!rets.length) return 'unreturned';
+    const received = rets.filter(r => r.status === 'received');
+    const retQty = {};
+    received.forEach(r => (r.transfer_items || []).forEach(ti => { retQty[ti.item_id] = (retQty[ti.item_id] || 0) + ti.requested_qty; }));
+    const allDone = (t.transfer_items || []).every(ti => (retQty[ti.item_id] || 0) >= ti.requested_qty);
+    return allDone ? 'returned' : 'partial';
+  }
+
+  const pending = all.filter(t => ['requested', 'shipped'].includes(t.status));
+  const done = all.filter(t => ['received', 'cancelled'].includes(t.status));
+  const shown = transferFilter === 'pending' ? pending : transferFilter === 'history' ? done : all;
 
   const statusLabel = { requested: '待出貨', shipped: '已出貨', received: '已收貨', cancelled: '已取消' };
-  const typeLabel = { transfer: '調撥', return: '歸還' };
+  const returnStatusLabel = { unreturned: '未歸還', partial: '部分歸還', returned: '已歸還' };
+  const returnStatusClass = { unreturned: 'requested', partial: 'shipped', returned: 'received' };
 
   el.innerHTML = `
     <div class="mgmt-bar"><span class="count">${pending.length} 筆待處理</span><button class="add-btn" onclick="openTransferForm()">＋ 新增調撥</button></div>
     <div class="tf-type-tabs">
-      <button class="tf-type-tab ${transferFilter === 'all' ? 'active' : ''}" onclick="transferFilter='all';loadTransfer()">全部 (${(transfers || []).length})</button>
+      <button class="tf-type-tab ${transferFilter === 'all' ? 'active' : ''}" onclick="transferFilter='all';loadTransfer()">全部 (${all.length})</button>
       <button class="tf-type-tab ${transferFilter === 'pending' ? 'active' : ''}" onclick="transferFilter='pending';loadTransfer()">待處理 (${pending.length})</button>
       <button class="tf-type-tab ${transferFilter === 'history' ? 'active' : ''}" onclick="transferFilter='history';loadTransfer()">已完成 (${done.length})</button>
     </div>
     ${shown.length ? shown.map(t => {
       const itemSummary = (t.transfer_items || []).map(ti => `${ti.items?.name || '?'} ×${ti.requested_qty}`).join('、');
+      const rs = getReturnStatus(t);
       return `<div class="tf-card" onclick="openTransferDetail('${t.id}')">
         <div class="tf-card-top">
           <div><span class="tf-card-stores">${t.from_store?.name || '?'}</span><span class="tf-card-arrow">→</span><span class="tf-card-stores">${t.to_store?.name || '?'}</span></div>
-          <div style="display:flex;gap:4px"><span class="tf-badge ${t.type}">${typeLabel[t.type] || t.type}</span><span class="tf-badge ${t.status}">${statusLabel[t.status] || t.status}</span></div>
+          <div style="display:flex;gap:4px"><span class="tf-badge ${t.status}">${statusLabel[t.status] || t.status}</span>${rs ? `<span class="tf-badge ${returnStatusClass[rs]}">${returnStatusLabel[rs]}</span>` : ''}</div>
         </div>
         <div class="tf-card-items">${itemSummary || '無品項'}</div>
         <div class="tf-card-meta">${t.requester?.name || ''} · ${new Date(t.requested_at).toLocaleDateString('zh-TW')}${t.note ? ' · ' + t.note : ''}</div>
@@ -1333,6 +1354,7 @@ function openTransferForm() {
   const myStoreId = currentUser.store_id;
   const stores = allStores.filter(s => s.id !== myStoreId);
   const items = allItems.filter(i => i.is_active !== false);
+  const cats = ['ALL', ...new Set(items.map(i => i.category))];
 
   document.getElementById('formOverlay')?.remove();
   const overlay = document.createElement('div');
@@ -1343,19 +1365,16 @@ function openTransferForm() {
       <div class="form-handle"></div>
       <div class="form-header"><div class="form-title">新增調撥單</div><button class="form-close" onclick="closeTransferForm()">✕</button></div>
       <div class="form-body">
-        <div class="form-group"><label class="form-label">類型</label>
-          <div class="chip-group" id="tfType">
-            <span class="chip active" data-val="transfer" onclick="selectChip('tfType',this)">調撥（借出）</span>
-            <span class="chip" data-val="return" onclick="selectChip('tfType',this)">歸還</span>
-          </div></div>
         <div class="form-group"><label class="form-label">對方門店 *</label>
           <select class="form-input" id="tfTarget" style="padding:10px 14px">
             <option value="">選擇門店</option>
             ${stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
           </select></div>
         <div class="form-group"><label class="form-label">品項</label>
+          <div class="search-wrap" style="margin-bottom:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input type="search" class="search-input" id="tfSearch" placeholder="搜尋品項…" oninput="filterTransferItems()"></div>
+          <div class="cat-filter" id="tfCatFilter">${cats.map(c => `<button class="cat-btn ${c === 'ALL' ? 'active' : ''}" onclick="window._tfCat='${c}';document.querySelectorAll('#tfCatFilter .cat-btn').forEach(b=>b.classList.toggle('active',b.textContent===(window._tfCat==='ALL'?'全部':'${c}')));filterTransferItems()">${c === 'ALL' ? '全部' : c}</button>`).join('')}</div>
           <div id="tfItems">${items.map(item => `
-            <div class="tf-item-row">
+            <div class="tf-item-row" data-cat="${item.category}" data-name="${item.name}">
               <div class="tf-item-name">${item.name}<div style="font-size:11px;color:var(--text3)">${item.category} · ${item.unit}</div></div>
               <input type="number" class="count-input" id="tfi_${item.id}" placeholder="0" inputmode="decimal" min="0" step="0.5" style="width:60px">
               <div class="tf-item-unit">${item.unit}</div>
@@ -1365,57 +1384,73 @@ function openTransferForm() {
         <button class="form-save" onclick="submitTransfer()">送出調撥單</button>
       </div>
     </div>`;
+  window._tfCat = 'ALL';
   document.body.appendChild(overlay);
+}
+
+function filterTransferItems() {
+  const search = (document.getElementById('tfSearch')?.value || '').trim().toLowerCase();
+  const cat = window._tfCat || 'ALL';
+  document.querySelectorAll('#tfItems .tf-item-row').forEach(row => {
+    const name = row.dataset.name.toLowerCase();
+    const rowCat = row.dataset.cat;
+    const matchCat = cat === 'ALL' || rowCat === cat;
+    const matchSearch = !search || name.includes(search);
+    row.style.display = (matchCat && matchSearch) ? '' : 'none';
+  });
 }
 
 function closeTransferForm() { document.getElementById('formOverlay')?.remove(); }
 
-async function submitTransfer() {
-  const targetId = document.getElementById('tfTarget').value;
-  if (!targetId) { alert('請選擇對方門店'); return; }
+async function submitTransfer(parentId) {
+  const targetId = document.getElementById('tfTarget')?.value;
+  if (!parentId && !targetId) { alert('請選擇對方門店'); return; }
 
-  const type = document.querySelector('#tfType .chip.active')?.dataset.val || 'transfer';
-  const note = document.getElementById('tfNote').value.trim();
-
+  const note = document.getElementById('tfNote')?.value.trim();
   const rows = [];
-  allItems.forEach(item => {
-    const input = document.getElementById('tfi_' + item.id);
-    if (!input) return;
+  document.querySelectorAll('[id^="tfi_"]').forEach(input => {
     const val = parseFloat(input.value);
-    if (!isNaN(val) && val > 0) rows.push({ item_id: item.id, requested_qty: val });
+    if (!isNaN(val) && val > 0) rows.push({ item_id: input.id.replace('tfi_', ''), requested_qty: val });
   });
-
   if (!rows.length) { alert('請至少填寫一項品項數量'); return; }
 
-  const fromId = type === 'transfer' ? currentUser.store_id : targetId;
-  const toId = type === 'transfer' ? targetId : currentUser.store_id;
+  const insertData = { type: parentId ? 'return' : 'transfer', requested_by: currentUser.id, note: note || null };
+  if (parentId) {
+    insertData.parent_id = parentId;
+    const fromId = document.getElementById('tfTarget')?.value || window._returnToStoreId;
+    insertData.from_store_id = fromId;
+    insertData.to_store_id = window._returnFromStoreId;
+  } else {
+    insertData.from_store_id = currentUser.store_id;
+    insertData.to_store_id = targetId;
+  }
 
-  const { data: tf, error } = await sb.from('transfers').insert({
-    from_store_id: fromId,
-    to_store_id: toId,
-    type,
-    requested_by: currentUser.id,
-    note: note || null
-  }).select().single();
-
+  const { data: tf, error } = await sb.from('transfers').insert(insertData).select().single();
   if (error) { alert('建立失敗：' + error.message); return; }
 
-  const items = rows.map(r => ({ transfer_id: tf.id, ...r }));
-  const { error: itemErr } = await sb.from('transfer_items').insert(items);
+  const { error: itemErr } = await sb.from('transfer_items').insert(rows.map(r => ({ transfer_id: tf.id, ...r })));
   if (itemErr) { alert('品項寫入失敗：' + itemErr.message); return; }
 
   closeTransferForm();
-  alert('調撥單已送出！');
-  loadTransfer();
+  alert(parentId ? '歸還單已建立！' : '調撥單已送出！');
+  if (parentId) openTransferDetail(parentId); else loadTransfer();
 }
 
 async function openTransferDetail(tfId) {
   const { data: t, error } = await sb.from('transfers').select('*, transfer_items(*, items(*)), from_store:stores!transfers_from_store_id_fkey(name), to_store:stores!transfers_to_store_id_fkey(name), requester:users!transfers_requested_by_fkey(name)').eq('id', tfId).single();
   if (error || !t) { alert('載入失敗'); return; }
 
+  // Load returns for this transfer
+  let returns = [];
+  let retQty = {};
+  if (t.status === 'received' && t.type === 'transfer') {
+    const { data: rets } = await sb.from('transfers').select('*, transfer_items(*, items(*)), requester:users!transfers_requested_by_fkey(name)').eq('parent_id', tfId).eq('type', 'return').order('requested_at', { ascending: false });
+    returns = rets || [];
+    returns.filter(r => r.status === 'received').forEach(r => (r.transfer_items || []).forEach(ti => { retQty[ti.item_id] = (retQty[ti.item_id] || 0) + ti.requested_qty; }));
+  }
+
   const el = document.getElementById('transferPage');
   const statusLabel = { requested: '待出貨', shipped: '已出貨', received: '已收貨', cancelled: '已取消' };
-  const typeLabel = { transfer: '調撥', return: '歸還' };
   const isAdmin = currentUser.role === 'admin';
   const myStoreId = currentUser.store_id;
   const isFromStore = myStoreId === t.from_store_id;
@@ -1437,9 +1472,42 @@ async function openTransferDetail(tfId) {
     }
   }
 
+  // Return progress for received transfers
+  let returnSection = '';
+  if (t.status === 'received' && t.type === 'transfer') {
+    const hasRemaining = (t.transfer_items || []).some(ti => (retQty[ti.item_id] || 0) < ti.requested_qty);
+    const allReturned = !hasRemaining;
+
+    returnSection = `
+      <div class="tf-detail-section">
+        <div class="tf-detail-title">歸還進度 ${allReturned ? '<span class="tf-badge received" style="margin-left:6px">已全數歸還</span>' : '<span class="tf-badge shipped" style="margin-left:6px">未完成</span>'}</div>
+        ${(t.transfer_items || []).map(ti => {
+          const returned = retQty[ti.item_id] || 0;
+          const remaining = Math.max(0, ti.requested_qty - returned);
+          const pct = ti.requested_qty > 0 ? Math.round(returned / ti.requested_qty * 100) : 100;
+          return `<div class="tf-item-row">
+            <div class="tf-item-name">${ti.items?.name || '?'}<div style="font-size:11px;color:var(--text3)">已歸還 ${returned} / ${ti.requested_qty}${remaining > 0 ? ` · 剩 ${remaining}` : ''}</div></div>
+            <div style="width:60px;height:6px;background:var(--border);border-radius:3px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${pct >= 100 ? 'var(--green)' : 'var(--accent)'};border-radius:3px"></div></div>
+            <div class="tf-item-unit">${pct}%</div>
+          </div>`;
+        }).join('')}
+      </div>
+      ${returns.length ? `<div class="tf-detail-section"><div class="tf-detail-title">歸還紀錄</div>${returns.map(r => {
+        const rItems = (r.transfer_items || []).map(ti => `${ti.items?.name || '?'} ×${ti.requested_qty}`).join('、');
+        return `<div style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openTransferDetail('${r.id}')">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px">${rItems}</span><span class="tf-badge ${r.status}">${statusLabel[r.status]}</span></div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">${r.requester?.name || ''} · ${new Date(r.requested_at).toLocaleDateString('zh-TW')}</div>
+        </div>`;
+      }).join('')}</div>` : ''}
+      ${hasRemaining ? `<div class="tf-actions"><button class="tf-btn-primary" onclick="openReturnForm('${t.id}')">歸還</button></div>` : ''}`;
+  }
+
+  const backTarget = t.parent_id ? `openTransferDetail('${t.parent_id}')` : 'loadTransfer()';
+  const titlePrefix = t.type === 'return' ? '歸還' : '調撥';
+
   el.innerHTML = `
     <div class="config-section">
-      <div style="display:flex;align-items:center;gap:8px"><button style="background:none;border:none;font-size:18px;cursor:pointer" onclick="loadTransfer()">←</button><div class="config-section-title">${typeLabel[t.type] || t.type}單</div></div>
+      <div style="display:flex;align-items:center;gap:8px"><button style="background:none;border:none;font-size:18px;cursor:pointer" onclick="${backTarget}">←</button><div class="config-section-title">${titlePrefix}單</div></div>
       <div class="config-section-sub"><span class="tf-badge ${t.status}">${statusLabel[t.status]}</span> · ${new Date(t.requested_at).toLocaleDateString('zh-TW')}</div>
     </div>
     <div class="tf-detail">
@@ -1467,8 +1535,55 @@ async function openTransferDetail(tfId) {
       </div>
       ${t.shipped_at ? `<div class="tf-detail-section"><div class="tf-detail-title">出貨時間</div><div style="font-size:14px">${new Date(t.shipped_at).toLocaleString('zh-TW')}</div></div>` : ''}
       ${t.received_at ? `<div class="tf-detail-section"><div class="tf-detail-title">收貨時間</div><div style="font-size:14px">${new Date(t.received_at).toLocaleString('zh-TW')}</div></div>` : ''}
+      ${returnSection}
     </div>
     ${actions}`;
+}
+
+function openReturnForm(parentId) {
+  // Get parent transfer detail from the currently rendered page
+  sb.from('transfers').select('*, transfer_items(*, items(*))').eq('id', parentId).single().then(async ({ data: parent }) => {
+    if (!parent) return;
+    // Get existing returns
+    const { data: rets } = await sb.from('transfers').select('transfer_items(item_id, requested_qty)').eq('parent_id', parentId).eq('type', 'return').eq('status', 'received');
+    const retQty = {};
+    (rets || []).forEach(r => (r.transfer_items || []).forEach(ti => { retQty[ti.item_id] = (retQty[ti.item_id] || 0) + ti.requested_qty; }));
+
+    const items = (parent.transfer_items || []).filter(ti => {
+      const remaining = ti.requested_qty - (retQty[ti.item_id] || 0);
+      return remaining > 0;
+    });
+
+    if (!items.length) { alert('已全數歸還'); return; }
+
+    window._returnFromStoreId = parent.from_store_id;
+    window._returnToStoreId = parent.to_store_id;
+
+    document.getElementById('formOverlay')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'formOverlay';
+    overlay.className = 'form-overlay show';
+    overlay.innerHTML = `
+      <div class="form-sheet">
+        <div class="form-handle"></div>
+        <div class="form-header"><div class="form-title">歸還品項</div><button class="form-close" onclick="closeTransferForm()">✕</button></div>
+        <div class="form-body">
+          <div style="font-size:13px;color:var(--text2);margin-bottom:12px;padding:10px;background:var(--surface2);border-radius:8px">歸還方向：${getStoreName(parent.to_store_id)} → ${getStoreName(parent.from_store_id)}</div>
+          <div class="form-group"><label class="form-label">本次歸還數量</label>
+            <div id="tfItems">${items.map(ti => {
+              const remaining = ti.requested_qty - (retQty[ti.item_id] || 0);
+              return `<div class="tf-item-row">
+                <div class="tf-item-name">${ti.items?.name || '?'}<div style="font-size:11px;color:var(--text3)">剩餘 ${remaining} ${ti.items?.unit || ''}</div></div>
+                <input type="number" class="count-input" id="tfi_${ti.item_id}" placeholder="0" inputmode="decimal" min="0" max="${remaining}" step="0.5" style="width:60px" value="${remaining}">
+                <div class="tf-item-unit">${ti.items?.unit || ''}</div>
+              </div>`;
+            }).join('')}</div></div>
+          <div class="form-group"><label class="form-label">備註（選填）</label><input class="form-input" id="tfNote" placeholder="歸還備註"></div>
+          <button class="form-save" onclick="submitTransfer('${parentId}')">送出歸還單</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+  });
 }
 
 async function updateTransferStatus(tfId, newStatus) {
@@ -1482,7 +1597,7 @@ async function updateTransferStatus(tfId, newStatus) {
   const { error } = await sb.from('transfers').update(updates).eq('id', tfId);
   if (error) { alert('更新失敗：' + error.message); return; }
   alert(newStatus === 'shipped' ? '已出貨' : newStatus === 'received' ? '已收貨' : '已取消');
-  loadTransfer();
+  openTransferDetail(tfId);
 }
 
 // ══════════ SUPPLIERS (廠商管理) ══════════

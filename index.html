@@ -512,7 +512,7 @@ function getItemAvailableSuppliers(itemId) {
   const maps = itemSupplierMap[itemId] || [];
   const isAdmin = currentUser.role === 'admin';
   return maps.filter(m => isAdmin || storeSuppliers.includes(m.supplier_id))
-    .map(m => ({ ...m, name: getSupplierName(m.supplier_id), price: allSuppliers.find(s => s.id === m.supplier_id)?.price }))
+    .map(m => ({ ...m, name: getSupplierName(m.supplier_id) }))
     .filter(m => m.name);
 }
 
@@ -537,7 +537,9 @@ function renderItems() {
     const cartItem = cart[item.id];
     const qty = cartItem?.qty || 0;
     const curSup = cartItem?.supplierId ? getSupplierName(cartItem.supplierId) : (avail.find(m => m.is_default) || avail[0])?.name || '';
-    return `<div class="order-item ${qty ? 'in-cart' : ''}"><div class="oi-info"><div class="oi-name">${item.name}</div><div class="oi-spec"><span class="oi-unit-tag">${item.unit}</span> ${item.spec || ''} ${hasMulti ? `<select class="oi-sup-select" onchange="pickSup('${item.id}',this.value)">${avail.map(s => `<option value="${s.supplier_id}" ${cartItem?.supplierId === s.supplier_id || (!cartItem && s.is_default) ? 'selected' : ''}>${s.name}${item.purchase_price ? '' : ''}</option>`).join('')}</select>` : `<span style="color:var(--text3);font-size:11px">· ${curSup}</span>`}</div></div><div class="oi-qty"><button class="qty-btn minus" onclick="adj('${item.id}',-1)">−</button><input type="number" class="qty-input ${qty ? 'has-value' : ''}" value="${qty || ''}" placeholder="0" inputmode="decimal" onfocus="this.select()" onchange="setQty('${item.id}',this.value)"><button class="qty-btn plus" onclick="adj('${item.id}',1)">+</button></div></div>`;
+    const curSupObj = cartItem?.supplierId ? avail.find(s => s.supplier_id === cartItem.supplierId) : (avail.find(m => m.is_default) || avail[0]);
+    const priceTag = curSupObj?.unit_price ? `<span style="color:var(--green);font-size:11px;margin-left:4px">$${curSupObj.unit_price}</span>` : '';
+    return `<div class="order-item ${qty ? 'in-cart' : ''}"><div class="oi-info"><div class="oi-name">${item.name}${priceTag}</div><div class="oi-spec"><span class="oi-unit-tag">${item.unit}</span> ${item.spec || ''} ${hasMulti ? `<select class="oi-sup-select" onchange="pickSup('${item.id}',this.value);renderItems()">${avail.map(s => `<option value="${s.supplier_id}" ${cartItem?.supplierId === s.supplier_id || (!cartItem && s.is_default) ? 'selected' : ''}>${s.name}${s.unit_price ? ' $'+s.unit_price : ''}</option>`).join('')}</select>` : `<span style="color:var(--text3);font-size:11px">· ${curSup}</span>`}</div></div><div class="oi-qty"><button class="qty-btn minus" onclick="adj('${item.id}',-1)">−</button><input type="number" class="qty-input ${qty ? 'has-value' : ''}" value="${qty || ''}" placeholder="0" inputmode="decimal" onfocus="this.select()" onchange="setQty('${item.id}',this.value)"><button class="qty-btn plus" onclick="adj('${item.id}',1)">+</button></div></div>`;
   }).join('') || '<div class="empty-state"><div class="icon">🔍</div><div class="msg">找不到品項</div></div>';
 }
 
@@ -926,8 +928,16 @@ function openItemForm(itemId) {
           <div class="form-group"><label class="form-label">進貨價</label><input type="number" class="form-input" id="fPrice" value="${item?.purchase_price ?? ''}" placeholder="選填" inputmode="decimal"></div>
           <div class="form-group"><label class="form-label">品項編號</label><input class="form-input" id="fCode" value="${item?.code || ''}" placeholder="選填"></div>
         </div>
-        <div class="form-group"><label class="form-label">供應商</label>
-          <div class="chip-group" id="fSuppliers">${allSuppliers.map(s => `<span class="chip ${itemMaps.some(m => m.supplier_id === s.id) ? 'active' : ''}" data-val="${s.id}" onclick="this.classList.toggle('active')">${s.name}</span>`).join('')}</div></div>
+        <div class="form-group"><label class="form-label">供應商（點選啟用，可輸入各供應商單價）</label>
+          <div id="fSuppliers" style="display:flex;flex-direction:column;gap:6px">${allSuppliers.map(s => {
+            const map = itemMaps.find(m => m.supplier_id === s.id);
+            const active = !!map;
+            const price = map?.unit_price ?? '';
+            return `<div class="sup-row" style="display:flex;align-items:center;gap:8px">
+              <span class="chip ${active ? 'active' : ''}" data-val="${s.id}" onclick="this.classList.toggle('active');const pr=this.parentElement.querySelector('.sup-price');if(pr)pr.style.display=this.classList.contains('active')?'block':'none'">${s.name}</span>
+              <input type="number" class="sup-price form-input" data-sup="${s.id}" value="${price}" placeholder="單價" inputmode="decimal" style="width:90px;padding:6px 8px;font-size:13px;margin:0;display:${active ? 'block' : 'none'}">
+            </div>`;
+          }).join('')}</div></div>
         <div class="toggle-row"><span class="toggle-label">列入盤點</span><div class="toggle ${item?.needs_count !== false ? 'on' : ''}" id="fCount" onclick="this.classList.toggle('on')"></div></div>
         <button class="form-save" onclick="saveItem('${itemId || ''}')">${isEdit ? '儲存變更' : '新增品項'}</button>
         ${isEdit ? `<button class="form-delete" onclick="deleteItem('${itemId}')">刪除此品項</button>` : ''}
@@ -974,13 +984,13 @@ async function saveItem(itemId) {
 
     // Update supplier mappings
     const selectedSups = [...document.querySelectorAll('#fSuppliers .chip.active')].map(c => c.dataset.val);
-    // Delete existing mappings
     await sb.from('item_suppliers').delete().eq('item_id', savedId);
-    // Insert new mappings
     if (selectedSups.length) {
-      await sb.from('item_suppliers').insert(selectedSups.map((supId, i) => ({
-        item_id: savedId, supplier_id: supId, is_default: i === 0
-      })));
+      await sb.from('item_suppliers').insert(selectedSups.map((supId, i) => {
+        const priceInput = document.querySelector(`#fSuppliers .sup-price[data-sup="${supId}"]`);
+        const unitPrice = priceInput ? parseFloat(priceInput.value) || null : null;
+        return { item_id: savedId, supplier_id: supId, is_default: i === 0, unit_price: unitPrice };
+      }));
     }
 
     closeItemForm();

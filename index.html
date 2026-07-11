@@ -847,10 +847,24 @@ async function showOrderDetail(orderId) {
           }).join('')}
         `).join('')}
         ${order.note ? `<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:8px;font-size:13px;color:var(--text2)">📝 ${order.note}</div>` : ''}
+        ${currentUser.store_id ? `<button class="form-save" style="margin-top:16px" onclick="copyOrder('${order.id}')">複製此訂單到叫貨單</button>` : ''}
       </div>
     </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+async function copyOrder(orderId) {
+  const { data: order } = await sb.from('orders').select('order_items(item_id, ordered_qty, supplier_id)').eq('id', orderId).single();
+  if (!order?.order_items?.length) { alert('無品項可複製'); return; }
+  order.order_items.forEach(oi => {
+    cart[oi.item_id] = { qty: oi.ordered_qty, supplierId: oi.supplier_id || getDefaultSupplier(oi.item_id) };
+  });
+  document.getElementById('formOverlay')?.remove();
+  updFloat();
+  switchTab('order');
+  renderItems();
+  alert(`已載入 ${order.order_items.length} 項品項到叫貨單，可調整後送出`);
 }
 
 // ══════════ ITEMS MANAGEMENT (Admin) ══════════

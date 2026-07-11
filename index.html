@@ -928,16 +928,20 @@ function openItemForm(itemId) {
           <div class="form-group"><label class="form-label">進貨價</label><input type="number" class="form-input" id="fPrice" value="${item?.purchase_price ?? ''}" placeholder="選填" inputmode="decimal"></div>
           <div class="form-group"><label class="form-label">品項編號</label><input class="form-input" id="fCode" value="${item?.code || ''}" placeholder="選填"></div>
         </div>
-        <div class="form-group"><label class="form-label">供應商（點選啟用，可輸入各供應商單價）</label>
-          <div id="fSuppliers" style="display:flex;flex-direction:column;gap:6px">${allSuppliers.map(s => {
-            const map = itemMaps.find(m => m.supplier_id === s.id);
-            const active = !!map;
-            const price = map?.unit_price ?? '';
-            return `<div class="sup-row" style="display:flex;align-items:center;gap:8px">
-              <span class="chip ${active ? 'active' : ''}" data-val="${s.id}" onclick="this.classList.toggle('active');const pr=this.parentElement.querySelector('.sup-price');if(pr)pr.style.display=this.classList.contains('active')?'block':'none'">${s.name}</span>
-              <input type="number" class="sup-price form-input" data-sup="${s.id}" value="${price}" placeholder="單價" inputmode="decimal" style="width:90px;padding:6px 8px;font-size:13px;margin:0;display:${active ? 'block' : 'none'}">
-            </div>`;
-          }).join('')}</div></div>
+        <div class="form-group"><label class="form-label">供應商</label>
+          <div id="fSuppliers">
+            <div class="chip-group" id="fSupChips">${allSuppliers.map(s => {
+              const active = itemMaps.some(m => m.supplier_id === s.id);
+              return `<span class="chip ${active ? 'active' : ''}" data-val="${s.id}" onclick="toggleSup(this)">${s.name}</span>`;
+            }).join('')}</div>
+            <div id="fSupPrices" style="margin-top:8px">${allSuppliers.filter(s => itemMaps.some(m => m.supplier_id === s.id)).map(s => {
+              const map = itemMaps.find(m => m.supplier_id === s.id);
+              return `<div class="sup-price-row" data-sid="${s.id}" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                <span style="font-size:13px;color:var(--text2);min-width:60px">${s.name}</span>
+                <input type="number" class="sup-price form-input" data-sup="${s.id}" value="${map?.unit_price ?? ''}" placeholder="單價" inputmode="decimal" style="flex:1;padding:6px 8px;font-size:13px;margin:0">
+              </div>`;
+            }).join('')}</div>
+          </div></div>
         <div class="toggle-row"><span class="toggle-label">列入盤點</span><div class="toggle ${item?.needs_count !== false ? 'on' : ''}" id="fCount" onclick="this.classList.toggle('on')"></div></div>
         <button class="form-save" onclick="saveItem('${itemId || ''}')">${isEdit ? '儲存變更' : '新增品項'}</button>
         ${isEdit ? `<button class="form-delete" onclick="deleteItem('${itemId}')">刪除此品項</button>` : ''}
@@ -948,6 +952,24 @@ function openItemForm(itemId) {
 }
 
 function closeItemForm() { document.getElementById('formOverlay')?.remove(); }
+
+function toggleSup(el) {
+  el.classList.toggle('active');
+  const supId = el.dataset.val;
+  const supName = el.textContent;
+  const container = document.getElementById('fSupPrices');
+  const existing = container.querySelector(`[data-sid="${supId}"]`);
+  if (el.classList.contains('active') && !existing) {
+    const row = document.createElement('div');
+    row.className = 'sup-price-row';
+    row.dataset.sid = supId;
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
+    row.innerHTML = `<span style="font-size:13px;color:var(--text2);min-width:60px">${supName}</span><input type="number" class="sup-price form-input" data-sup="${supId}" placeholder="單價" inputmode="decimal" style="flex:1;padding:6px 8px;font-size:13px;margin:0">`;
+    container.appendChild(row);
+  } else if (!el.classList.contains('active') && existing) {
+    existing.remove();
+  }
+}
 
 function selectChip(groupId, el) {
   document.querySelectorAll(`#${groupId} .chip`).forEach(c => c.classList.remove('active'));

@@ -752,31 +752,26 @@ async function loadKitchenSummary() {
     });
   });
 
-  const statusText = orders.every(o => o.status === 'confirmed' || o.status === 'received') ? '已出貨' : '待出貨';
-  const statusClass = statusText === '已出貨' ? 'status-done' : 'status-preparing';
   const sn = s => s.replace('麻媽家','').replace('涼三伯','');
   let totalItems = 0;
-  let copyText = `🍳 央廚出貨單\n📅 ${today}\n`;
+
+  let html = '<div class="section-bar">央廚叫貨彙總（今日 ' + today + '）</div>';
+  let catIdx = 0;
   for (const [cat, items] of Object.entries(catItems)) {
     const il = Object.values(items);
     totalItems += il.length;
-    copyText += `\n【${cat}】\n`;
+    const copyId = 'copy-ks-' + catIdx++;
+    let catCopy = `🍳 央廚出貨單【${cat}】\n📅 ${today}\n\n`;
     il.forEach(it => {
-      copyText += `${it.name} ${it.total}${it.unit}`;
-      copyText += `（${it.stores.map(s => sn(s.store) + ' ' + s.qty).join('、')}）\n`;
+      catCopy += `${it.name} ${it.total}${it.unit}（${it.stores.map(s => sn(s.store) + ' ' + s.qty).join('、')}）\n`;
     });
-  }
-  copyText += `\n合計 ${totalItems} 項品項，${orders.length} 間門店`;
 
-  let html = '<div class="section-bar">央廚叫貨彙總（今日 ' + today + '）</div>';
-  html += `<div class="card"><div class="card-header"><div class="card-header-left"><div class="card-supplier">央廚出貨單</div><div class="card-date">${orders.length} 間門店 · ${totalItems} 項品項</div></div><span class="card-status ${statusClass}">${statusText}</span></div>`;
-  for (const [cat, items] of Object.entries(catItems)) {
-    html += `<div class="cart-section-title">${cat}</div>`;
-    for (const it of Object.values(items)) {
+    html += `<div class="card" style="margin-bottom:12px"><div class="card-header"><div class="card-header-left"><div class="card-supplier">${cat}</div><div class="card-date">${il.length} 項品項</div></div></div>`;
+    for (const it of il) {
       html += `<div class="card-row"><div class="cr-info"><div class="cr-name">${it.name}</div><div class="cr-sub">${it.stores.map(s => `<span class="fulfill-store">${sn(s.store)} ${s.qty}</span>`).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--purple);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
     }
+    html += `<div class="copy-text" id="${copyId}">${catCopy}</div><button class="copy-btn" onclick="copyToClipboard('${copyId}')">📋 複製【${cat}】</button></div>`;
   }
-  html += `<div class="copy-text" id="copy-kitchen">${copyText}</div><button class="copy-btn" onclick="copyToClipboard('copy-kitchen')">📋 複製央廚出貨單（貼LINE）</button></div>`;
   el.innerHTML = html;
 }
 
@@ -840,28 +835,25 @@ async function loadFulfill() {
 
   const sn = s => s.replace('麻媽家','').replace('涼三伯','');
   let totalItems = 0;
-  let copyText = `🍳 央廚出貨單\n📅 ${today}\n`;
+
+  let html = '<div class="section-bar">今日各店叫貨彙總 — 待出貨</div>';
+  let catIdx = 0;
   for (const [cat, items] of Object.entries(catItems)) {
     const il = Object.values(items);
     totalItems += il.length;
-    copyText += `\n【${cat}】\n`;
+    const copyId = 'copy-ful-' + catIdx++;
+    let catCopy = `🍳 央廚出貨單【${cat}】\n📅 ${today}\n\n`;
     il.forEach(it => {
-      copyText += `${it.name} ${it.total}${it.unit}`;
-      copyText += `（${it.stores.map(s => sn(s.store) + ' ' + s.qty).join('、')}）\n`;
+      catCopy += `${it.name} ${it.total}${it.unit}（${it.stores.map(s => sn(s.store) + ' ' + s.qty).join('、')}）\n`;
     });
-  }
-  copyText += `\n合計 ${totalItems} 項品項，${orders.length} 間門店`;
 
-  let html = '<div class="section-bar">今日各店叫貨彙總 — 待出貨</div>';
-  html += `<div class="card"><div class="card-header"><div class="card-header-left"><div class="card-supplier">各店叫貨彙總</div><div class="card-date">${orders.length} 間門店 · ${totalItems} 項品項</div></div><span class="card-status status-preparing">備貨中</span></div>`;
-  for (const [cat, items] of Object.entries(catItems)) {
-    html += `<div class="cart-section-title">${cat}</div>`;
-    for (const it of Object.values(items)) {
+    html += `<div class="card" style="margin-bottom:12px"><div class="card-header"><div class="card-header-left"><div class="card-supplier">${cat}</div><div class="card-date">${il.length} 項品項</div></div></div>`;
+    for (const it of il) {
       html += `<div class="card-row"><div class="cr-info"><div class="cr-name">${it.name}</div><div class="cr-sub">${it.stores.map(s => `<span class="fulfill-store">${sn(s.store)} ${s.qty}</span>`).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--purple);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
     }
+    html += `<div class="copy-text" id="${copyId}">${catCopy}</div><button class="copy-btn" onclick="copyToClipboard('${copyId}')">📋 複製【${cat}】</button></div>`;
   }
-  html += `<div class="copy-text" id="copy-fulfill">${copyText}</div><button class="copy-btn" onclick="copyToClipboard('copy-fulfill')">📋 複製出貨單（貼LINE）</button>`;
-  html += `<div class="card-actions"><button class="card-btn btn-purple" onclick="fulfillAll(this)">全部出貨完成</button></div></div>`;
+  html += `<div style="padding:12px 16px"><button class="card-btn btn-purple" style="width:100%;padding:14px;border-radius:12px;font-size:16px;font-weight:700;border:none;color:#fff;background:var(--purple);cursor:pointer" onclick="fulfillAll(this)">全部出貨完成</button></div>`;
   el.innerHTML = html;
 }
 

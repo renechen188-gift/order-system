@@ -284,10 +284,12 @@
   <div class="login-box">
     <div class="login-logo">麻媽家·涼三伯</div>
     <div class="login-sub">叫貨系統</div>
-    <label class="login-label">帳號</label>
+    <label class="login-label">門店代號</label>
     <input class="login-input" id="loginEmail" type="text" placeholder="輸入代號" autocomplete="username" style="text-align:center;font-size:18px;font-weight:600;letter-spacing:1px">
-    <label class="login-label">密碼</label>
-    <input class="login-input" id="loginPass" type="password" placeholder="輸入密碼" autocomplete="current-password" style="text-align:center;font-size:18px;font-weight:600;letter-spacing:1px">
+    <div id="loginPassWrap" style="display:none">
+      <label class="login-label">密碼</label>
+      <input class="login-input" id="loginPass" type="password" placeholder="輸入密碼" autocomplete="current-password" style="text-align:center;font-size:18px;font-weight:600;letter-spacing:1px">
+    </div>
     <button class="login-btn" id="loginBtn" onclick="doLogin()">登入</button>
     <div class="login-error" id="loginError"></div>
   </div>
@@ -360,12 +362,20 @@ async function doLogin() {
   let code = document.getElementById('loginEmail').value.trim().toLowerCase();
   const errEl = document.getElementById('loginError');
   const btn = document.getElementById('loginBtn');
-  let pass = document.getElementById('loginPass').value.trim();
-  if (!code) { errEl.textContent = '請輸入帳號'; return; }
+  const passEl = document.getElementById('loginPass');
+  let pass = passEl.value.trim();
+  if (!code) { errEl.textContent = '請輸入門店代號'; return; }
   btn.disabled = true; errEl.textContent = '';
   let email = code.includes('@') ? code : code + '@order.com';
-  if (!pass) pass = code + '888';
-  btn.disabled = true; errEl.textContent = '';
+  if (!pass) {
+    const { error } = await sb.auth.signInWithPassword({ email, password: code + '888' });
+    if (!error) { await initApp(); return; }
+    document.getElementById('loginPassWrap').style.display = 'block';
+    passEl.focus();
+    errEl.textContent = '請輸入密碼';
+    btn.disabled = false;
+    return;
+  }
   const { error } = await sb.auth.signInWithPassword({ email, password: pass });
   if (error) { errEl.textContent = '帳號或密碼錯誤'; btn.disabled = false; return; }
   await initApp();

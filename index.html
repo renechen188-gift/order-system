@@ -834,11 +834,28 @@ async function loadFulfill() {
     });
   });
 
-  let html = '<div class="section-bar">今日各店叫貨彙總 — 待出貨</div>';
-  html += `<div class="card"><div class="card-header"><div class="card-header-left"><div class="card-supplier">各店叫貨彙總</div><div class="card-date">${today}</div></div><span class="card-status status-preparing">備貨中</span></div>`;
-  for (const [key, it] of Object.entries(itemTotals)) {
-    html += `<div class="card-row"><div class="cr-info"><div class="cr-name">${it.name}</div><div class="cr-sub">${it.stores.map(s => `<span class="fulfill-store">${s.store} ${s.qty}</span>`).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--purple);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
+  const itemList = Object.values(itemTotals);
+  const storeGroups = {};
+  itemList.forEach(it => {
+    it.stores.forEach(s => {
+      if (!storeGroups[s.store]) storeGroups[s.store] = [];
+      storeGroups[s.store].push({ name: it.name, qty: s.qty, unit: it.unit });
+    });
+  });
+  let copyText = `🍳 央廚出貨單\n📅 ${today}\n`;
+  for (const [store, sItems] of Object.entries(storeGroups)) {
+    const shortName = store.replace('麻媽家','').replace('涼三伯','');
+    copyText += `\n📍 ${shortName}：\n`;
+    sItems.forEach(si => { copyText += `  ${si.name} ${si.qty}${si.unit}\n`; });
   }
+  copyText += `\n合計 ${itemList.length} 項品項，${orders.length} 間門店`;
+
+  let html = '<div class="section-bar">今日各店叫貨彙總 — 待出貨</div>';
+  html += `<div class="card"><div class="card-header"><div class="card-header-left"><div class="card-supplier">各店叫貨彙總</div><div class="card-date">${orders.length} 間門店 · ${itemList.length} 項品項</div></div><span class="card-status status-preparing">備貨中</span></div>`;
+  for (const [key, it] of Object.entries(itemTotals)) {
+    html += `<div class="card-row"><div class="cr-info"><div class="cr-name">${it.name}</div><div class="cr-sub">${it.stores.map(s => `<span class="fulfill-store">${s.store.replace('麻媽家','').replace('涼三伯','')} ${s.qty}</span>`).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--purple);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
+  }
+  html += `<div class="copy-text" id="copy-fulfill">${copyText}</div><button class="copy-btn" onclick="copyToClipboard('copy-fulfill')">📋 複製出貨單（貼LINE）</button>`;
   html += `<div class="card-actions"><button class="card-btn btn-purple" onclick="fulfillAll(this)">全部出貨完成</button></div></div>`;
   el.innerHTML = html;
 }

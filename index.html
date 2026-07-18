@@ -739,41 +739,43 @@ async function loadKitchenSummary() {
 
   if (!orders?.length) { el.innerHTML = '<div class="section-bar">央廚叫貨彙總（今日）</div><div class="empty-state"><div class="icon">📋</div><div class="msg">今日尚無央廚叫貨單</div></div>'; return; }
 
-  const itemTotals = {};
+  const catItems = {};
   orders.forEach(order => {
     (order.order_items || []).forEach(oi => {
       const item = oi.items;
+      const cat = item?.category || '其他';
       const key = item?.id || oi.item_id;
-      if (!itemTotals[key]) itemTotals[key] = { name: item?.name || '', unit: item?.unit || '', total: 0, stores: [] };
-      itemTotals[key].total += oi.ordered_qty;
-      itemTotals[key].stores.push({ store: order.stores?.name || '', qty: oi.ordered_qty });
+      if (!catItems[cat]) catItems[cat] = {};
+      if (!catItems[cat][key]) catItems[cat][key] = { name: item?.name || '', unit: item?.unit || '', total: 0, stores: [] };
+      catItems[cat][key].total += oi.ordered_qty;
+      catItems[cat][key].stores.push({ store: order.stores?.name || '', qty: oi.ordered_qty });
     });
   });
 
-  const itemList = Object.values(itemTotals);
   const statusText = orders.every(o => o.status === 'confirmed' || o.status === 'received') ? '已出貨' : '待出貨';
   const statusClass = statusText === '已出貨' ? 'status-done' : 'status-preparing';
-
+  const sn = s => s.replace('麻媽家','').replace('涼三伯','');
+  let totalItems = 0;
   let copyText = `🍳 央廚出貨單\n📅 ${today}\n`;
-  const storeGroups = {};
-  itemList.forEach(it => {
-    it.stores.forEach(s => {
-      if (!storeGroups[s.store]) storeGroups[s.store] = [];
-      storeGroups[s.store].push({ name: it.name, qty: s.qty, unit: it.unit });
+  for (const [cat, items] of Object.entries(catItems)) {
+    const il = Object.values(items);
+    totalItems += il.length;
+    copyText += `\n【${cat}】\n`;
+    il.forEach(it => {
+      copyText += `${it.name} ${it.total}${it.unit}`;
+      copyText += `（${it.stores.map(s => sn(s.store) + ' ' + s.qty).join('、')}）\n`;
     });
-  });
-  for (const [store, sItems] of Object.entries(storeGroups)) {
-    const shortName = store.replace('麻媽家','').replace('涼三伯','');
-    copyText += `\n📍 ${shortName}：\n`;
-    sItems.forEach(si => { copyText += `  ${si.name} ${si.qty}${si.unit}\n`; });
   }
-  copyText += `\n合計 ${itemList.length} 項品項，${orders.length} 間門店`;
+  copyText += `\n合計 ${totalItems} 項品項，${orders.length} 間門店`;
 
   let html = '<div class="section-bar">央廚叫貨彙總（今日 ' + today + '）</div>';
-  html += `<div class="card"><div class="card-header"><div class="card-header-left"><div class="card-supplier">央廚出貨單</div><div class="card-date">${orders.length} 間門店 · ${itemList.length} 項品項</div></div><span class="card-status ${statusClass}">${statusText}</span></div>`;
-  itemList.forEach(it => {
-    html += `<div class="card-row"><div class="cr-info"><div class="cr-name">${it.name}</div><div class="cr-sub">${it.stores.map(s => `<span class="fulfill-store">${s.store.replace('麻媽家','').replace('涼三伯','')} ${s.qty}</span>`).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--purple);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
-  });
+  html += `<div class="card"><div class="card-header"><div class="card-header-left"><div class="card-supplier">央廚出貨單</div><div class="card-date">${orders.length} 間門店 · ${totalItems} 項品項</div></div><span class="card-status ${statusClass}">${statusText}</span></div>`;
+  for (const [cat, items] of Object.entries(catItems)) {
+    html += `<div class="cart-section-title">${cat}</div>`;
+    for (const it of Object.values(items)) {
+      html += `<div class="card-row"><div class="cr-info"><div class="cr-name">${it.name}</div><div class="cr-sub">${it.stores.map(s => `<span class="fulfill-store">${sn(s.store)} ${s.qty}</span>`).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--purple);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
+    }
+  }
   html += `<div class="copy-text" id="copy-kitchen">${copyText}</div><button class="copy-btn" onclick="copyToClipboard('copy-kitchen')">📋 複製央廚出貨單（貼LINE）</button></div>`;
   el.innerHTML = html;
 }
@@ -822,38 +824,41 @@ async function loadFulfill() {
 
   if (!orders?.length) { el.innerHTML = '<div class="section-bar">今日各店叫貨彙總</div><div class="empty-state"><div class="icon">📦</div><div class="msg">今日沒有門店叫貨</div></div>'; return; }
 
-  // Aggregate by item
-  const itemTotals = {};
+  // Aggregate by category then item
+  const catItems = {};
   orders.forEach(order => {
     (order.order_items || []).forEach(oi => {
       const item = oi.items;
+      const cat = item?.category || '其他';
       const key = item?.id || oi.item_id;
-      if (!itemTotals[key]) itemTotals[key] = { name: item?.name || '', unit: item?.unit || '', total: 0, stores: [] };
-      itemTotals[key].total += oi.ordered_qty;
-      itemTotals[key].stores.push({ store: order.stores?.name || '', qty: oi.ordered_qty });
+      if (!catItems[cat]) catItems[cat] = {};
+      if (!catItems[cat][key]) catItems[cat][key] = { name: item?.name || '', unit: item?.unit || '', total: 0, stores: [] };
+      catItems[cat][key].total += oi.ordered_qty;
+      catItems[cat][key].stores.push({ store: order.stores?.name || '', qty: oi.ordered_qty });
     });
   });
 
-  const itemList = Object.values(itemTotals);
-  const storeGroups = {};
-  itemList.forEach(it => {
-    it.stores.forEach(s => {
-      if (!storeGroups[s.store]) storeGroups[s.store] = [];
-      storeGroups[s.store].push({ name: it.name, qty: s.qty, unit: it.unit });
-    });
-  });
+  const sn = s => s.replace('麻媽家','').replace('涼三伯','');
+  let totalItems = 0;
   let copyText = `🍳 央廚出貨單\n📅 ${today}\n`;
-  for (const [store, sItems] of Object.entries(storeGroups)) {
-    const shortName = store.replace('麻媽家','').replace('涼三伯','');
-    copyText += `\n📍 ${shortName}：\n`;
-    sItems.forEach(si => { copyText += `  ${si.name} ${si.qty}${si.unit}\n`; });
+  for (const [cat, items] of Object.entries(catItems)) {
+    const il = Object.values(items);
+    totalItems += il.length;
+    copyText += `\n【${cat}】\n`;
+    il.forEach(it => {
+      copyText += `${it.name} ${it.total}${it.unit}`;
+      copyText += `（${it.stores.map(s => sn(s.store) + ' ' + s.qty).join('、')}）\n`;
+    });
   }
-  copyText += `\n合計 ${itemList.length} 項品項，${orders.length} 間門店`;
+  copyText += `\n合計 ${totalItems} 項品項，${orders.length} 間門店`;
 
   let html = '<div class="section-bar">今日各店叫貨彙總 — 待出貨</div>';
-  html += `<div class="card"><div class="card-header"><div class="card-header-left"><div class="card-supplier">各店叫貨彙總</div><div class="card-date">${orders.length} 間門店 · ${itemList.length} 項品項</div></div><span class="card-status status-preparing">備貨中</span></div>`;
-  for (const [key, it] of Object.entries(itemTotals)) {
-    html += `<div class="card-row"><div class="cr-info"><div class="cr-name">${it.name}</div><div class="cr-sub">${it.stores.map(s => `<span class="fulfill-store">${s.store.replace('麻媽家','').replace('涼三伯','')} ${s.qty}</span>`).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--purple);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
+  html += `<div class="card"><div class="card-header"><div class="card-header-left"><div class="card-supplier">各店叫貨彙總</div><div class="card-date">${orders.length} 間門店 · ${totalItems} 項品項</div></div><span class="card-status status-preparing">備貨中</span></div>`;
+  for (const [cat, items] of Object.entries(catItems)) {
+    html += `<div class="cart-section-title">${cat}</div>`;
+    for (const it of Object.values(items)) {
+      html += `<div class="card-row"><div class="cr-info"><div class="cr-name">${it.name}</div><div class="cr-sub">${it.stores.map(s => `<span class="fulfill-store">${sn(s.store)} ${s.qty}</span>`).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--purple);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
+    }
   }
   html += `<div class="copy-text" id="copy-fulfill">${copyText}</div><button class="copy-btn" onclick="copyToClipboard('copy-fulfill')">📋 複製出貨單（貼LINE）</button>`;
   html += `<div class="card-actions"><button class="card-btn btn-purple" onclick="fulfillAll(this)">全部出貨完成</button></div></div>`;

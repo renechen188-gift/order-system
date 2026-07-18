@@ -887,9 +887,10 @@ async function loadItemsManagement() {
     ${filtered.map(item => {
       const maps = itemSupplierMap[item.id] || [];
       const supNames = maps.map(m => getSupplierName(m.supplier_id)).filter(Boolean).join('、');
+      const priceDisplay = maps.filter(m => m.unit_price != null).map(m => `${getSupplierName(m.supplier_id)} $${m.unit_price}`).join('、') || (item.purchase_price != null ? '$' + item.purchase_price : '—');
       return `<div class="mgmt-item" onclick="openItemForm('${item.id}')">
         <div class="mi-info"><div class="mi-name">${item.name}</div><div class="mi-sub">${types[item.type] || item.type} · ${item.category} · ${item.unit}${supNames ? ' · ' + supNames : ''}${item.needs_count ? '' : ' · 不盤點'}</div></div>
-        <div class="mi-price">${item.purchase_price != null ? '$' + item.purchase_price : '—'}</div>
+        <div class="mi-price" style="font-size:12px;text-align:right;max-width:160px">${priceDisplay}</div>
         <div class="mi-arrow">›</div>
       </div>`;
     }).join('') || '<div class="empty-state"><div class="icon">📦</div><div class="msg">沒有品項</div></div>'}`;

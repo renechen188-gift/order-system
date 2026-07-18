@@ -538,18 +538,20 @@ function renderItems() {
     const hasMulti = avail.length > 1 && orderType === 'external';
     const cartItem = cart[item.id];
     const qty = cartItem?.qty || 0;
-    const curSup = cartItem?.supplierId ? getSupplierName(cartItem.supplierId) : (avail.find(m => m.is_default) || avail[0])?.name || '';
-    const curSupObj = cartItem?.supplierId ? avail.find(s => s.supplier_id === cartItem.supplierId) : (avail.find(m => m.is_default) || avail[0]);
+    const activeSup = cartItem?.supplierId || supPref[item.id];
+    const curSup = activeSup ? getSupplierName(activeSup) : (avail.find(m => m.is_default) || avail[0])?.name || '';
+    const curSupObj = activeSup ? avail.find(s => s.supplier_id === activeSup) : (avail.find(m => m.is_default) || avail[0]);
     const priceTag = curSupObj?.unit_price ? `<span style="color:var(--green);font-size:11px;margin-left:4px">$${curSupObj.unit_price}</span>` : '';
-    return `<div class="order-item ${qty ? 'in-cart' : ''}"><div class="oi-info"><div class="oi-name">${item.name}${priceTag}</div><div class="oi-spec"><span class="oi-unit-tag">${item.unit}</span> ${item.spec || ''} ${hasMulti ? `<select class="oi-sup-select" onchange="pickSup('${item.id}',this.value);renderItems()">${avail.map(s => `<option value="${s.supplier_id}" ${cartItem?.supplierId === s.supplier_id || (!cartItem && s.is_default) ? 'selected' : ''}>${s.name}${s.unit_price ? ' $'+s.unit_price : ''}</option>`).join('')}</select>` : `<span style="color:var(--text3);font-size:11px">· ${curSup}</span>`}</div></div><div class="oi-qty"><button class="qty-btn minus" onclick="adj('${item.id}',-1)">−</button><input type="number" class="qty-input ${qty ? 'has-value' : ''}" value="${qty || ''}" placeholder="0" inputmode="decimal" onfocus="this.select()" onchange="setQty('${item.id}',this.value)"><button class="qty-btn plus" onclick="adj('${item.id}',1)">+</button></div></div>`;
+    return `<div class="order-item ${qty ? 'in-cart' : ''}"><div class="oi-info"><div class="oi-name">${item.name}${priceTag}</div><div class="oi-spec"><span class="oi-unit-tag">${item.unit}</span> ${item.spec || ''} ${hasMulti ? `<select class="oi-sup-select" onchange="pickSup('${item.id}',this.value);renderItems()">${avail.map(s => `<option value="${s.supplier_id}" ${activeSup === s.supplier_id || (!activeSup && s.is_default) ? 'selected' : ''}>${s.name}${s.unit_price ? ' $'+s.unit_price : ''}</option>`).join('')}</select>` : `<span style="color:var(--text3);font-size:11px">· ${curSup}</span>`}</div></div><div class="oi-qty"><button class="qty-btn minus" onclick="adj('${item.id}',-1)">−</button><input type="number" class="qty-input ${qty ? 'has-value' : ''}" value="${qty || ''}" placeholder="0" inputmode="decimal" onfocus="this.select()" onchange="setQty('${item.id}',this.value)"><button class="qty-btn plus" onclick="adj('${item.id}',1)">+</button></div></div>`;
   }).join('') || '<div class="empty-state"><div class="icon">🔍</div><div class="msg">找不到品項</div></div>';
 }
 
 // ══════════ CART ══════════
-function getCartSupplier(id) { return cart[id]?.supplierId || document.querySelector(`.order-item select[onchange*="'${id}'"]`)?.value || getDefaultSupplier(id); }
+function getCartSupplier(id) { return cart[id]?.supplierId || supPref[id] || getDefaultSupplier(id); }
 function adj(id, d) { const cur = cart[id]?.qty || 0; const n = Math.max(0, cur + d); if (!n) delete cart[id]; else cart[id] = { qty: n, supplierId: getCartSupplier(id) }; updFloat(); renderItems(); }
 function setQty(id, v) { const n = parseFloat(v) || 0; if (n <= 0) delete cart[id]; else cart[id] = { qty: n, supplierId: getCartSupplier(id) }; updFloat(); renderItems(); }
-function pickSup(id, supId) { if (cart[id]) cart[id].supplierId = supId; }
+const supPref = {};
+function pickSup(id, supId) { supPref[id] = supId; if (cart[id]) cart[id].supplierId = supId; renderItems(); }
 function updFloat() { const n = Object.keys(cart).length; document.getElementById('cartFloat').classList.toggle('hidden', n === 0 || currentTab !== 'order'); document.getElementById('cartBadge').textContent = n + ' 項'; }
 
 function openCart() { document.getElementById('appRoot').style.display = 'none'; document.getElementById('cartPage').style.display = 'block'; document.getElementById('cartFloat').classList.add('hidden'); renderCart(); }

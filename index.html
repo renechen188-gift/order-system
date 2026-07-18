@@ -403,6 +403,8 @@ function buildTabs() {
   const tabs = [];
   if (currentUser.role === 'admin') {
     tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
+  } else if (currentUser.role === 'ops') {
+    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' });
   } else if (currentUser.role === 'kitchen') {
     tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
   } else {
@@ -482,9 +484,24 @@ function getDefaultSupplier(itemId) {
 }
 
 // ══════════ ORDER PAGE ══════════
+async function switchOpsStore(storeId) {
+  currentUser.store_id = storeId || null;
+  if (storeId) {
+    const { data: ss } = await sb.from('store_suppliers').select('supplier_id').eq('store_id', storeId).eq('is_active', true);
+    storeSuppliers = (ss || []).map(s => s.supplier_id);
+  } else {
+    storeSuppliers = allSuppliers.map(s => s.id);
+  }
+  cart = {};
+  renderOrderPage();
+  updFloat();
+}
+
 function renderOrderPage() {
   const kitchens = allSuppliers.filter(s => s.type === 'central_kitchen');
+  const storePicker = currentUser.role === 'ops' ? `<div style="padding:12px 16px 4px;display:flex;align-items:center;gap:8px"><span style="font-size:13px;color:var(--text3)">代叫門店：</span><select class="oi-sup-select" style="flex:1;padding:8px 10px;font-size:14px;border-radius:8px;border:1px solid var(--border);background:var(--surface1)" onchange="switchOpsStore(this.value)"><option value="">請選擇門店</option>${allStores.filter(s => s.is_active).map(s => `<option value="${s.id}" ${currentUser.store_id === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}</select></div>` : '';
   document.getElementById('orderPage').innerHTML = `
+    ${storePicker}
     <div class="type-tabs">
       <button class="type-tab active" id="tabExt" onclick="setOrderType('external')"><div class="type-tab-icon">🏪</div><div class="type-tab-label">外部廠商</div><div class="type-tab-sub">肉、菜、蛋、米</div></button>
       ${kitchens.map((k, i) => `<button class="type-tab" id="tabKit${i}" onclick="setOrderType('internal','${k.id}')" data-kit="${k.id}"><div class="type-tab-icon">🏭</div><div class="type-tab-label">${k.name}</div><div class="type-tab-sub">${k.note || '半成品'}</div></button>`).join('')}

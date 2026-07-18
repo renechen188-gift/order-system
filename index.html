@@ -710,17 +710,30 @@ async function loadSummary() {
       });
     });
     let copyText = `📋 麻媽家·涼三伯 採購單\n📅 ${today}\n\n${supName} 您好，以下為今日訂單：\n`;
+    const brandStores = { '🔴 麻媽家': [], '🔵 涼三伯': [] };
     for (const [store, sItems] of Object.entries(storeGroups)) {
-      const shortName = store.replace('麻媽家','').replace('涼三伯','');
-      copyText += `\n${shortName}：\n`;
-      sItems.forEach(si => { copyText += `${si.name} ${si.qty}${si.unit}\n`; });
+      const brand = store.startsWith('涼三伯') ? '🔵 涼三伯' : '🔴 麻媽家';
+      brandStores[brand].push({ store, sItems });
+    }
+    for (const [brand, stores] of Object.entries(brandStores)) {
+      if (!stores.length) continue;
+      copyText += `\n━━ ${brand} ━━\n`;
+      stores.forEach(({ store, sItems }) => {
+        const shortName = store.replace('麻媽家','').replace('涼三伯','');
+        copyText += `\n📍 ${shortName}：\n`;
+        sItems.forEach(si => { copyText += `  ${si.name} ${si.qty}${si.unit}\n`; });
+      });
     }
     copyText += `\n如有問題請回覆，謝謝！`;
     const copyId = 'copy-' + supName.replace(/\s/g, '');
 
     html += `<div class="card"><div class="card-header"><div class="card-header-left"><div class="card-supplier">${supName}</div><div class="card-date">${itemList.length} 項品項</div></div><span class="card-status status-done">已彙總</span></div>`;
     itemList.forEach(it => {
-      html += `<div class="card-row"><div class="cr-info"><div class="cr-name">${it.name}</div><div class="cr-sub">${it.stores.map(s => `<span class="fulfill-store">${s.store} ${s.qty}</span>`).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--accent);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
+      html += `<div class="card-row"><div class="cr-info"><div class="cr-name">${it.name}</div><div class="cr-sub">${it.stores.map(s => {
+        const isCool = s.store.startsWith('涼三伯');
+        const sn = s.store.replace('麻媽家','').replace('涼三伯','');
+        return `<span class="fulfill-store" style="border-color:${isCool ? '#3b82f6' : '#ef4444'}40;color:${isCool ? '#3b82f6' : '#ef4444'}">${sn} ${s.qty}</span>`;
+      }).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--accent);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
     });
     html += `<div class="copy-text" id="${copyId}">${copyText}</div><button class="copy-btn" onclick="copyToClipboard('${copyId}')">📋 複製採購單文字</button></div>`;
   }

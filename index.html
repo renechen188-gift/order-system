@@ -1756,33 +1756,35 @@ async function exportPurchaseSummary() {
   const { data: orders } = await query;
   if (!orders?.length) { alert('該期間無資料'); return; }
 
-  const rows = {};
+  const rows = [];
   orders.forEach(o => (o.order_items || []).forEach(oi => {
     if (f.supId && oi.supplier_id !== f.supId) return;
-    const supName = getSupplierName(oi.supplier_id) || '未指定';
     const item = oi.items;
-    const key = supName + '|' + (item?.name || '');
-    if (!rows[key]) rows[key] = { sup: supName, name: item?.name || '', unit: item?.unit || '', spec: item?.spec || '', qty: 0, price: oi.items?.purchase_price || null };
-    rows[key].qty += oi.ordered_qty;
     const supMap = (itemSupplierMap[item?.id] || []).find(m => m.supplier_id === oi.supplier_id);
-    if (supMap?.unit_price) rows[key].price = supMap.unit_price;
+    const price = supMap?.unit_price || item?.purchase_price || null;
+    rows.push({
+      date: o.order_date, store: o.stores?.name || '', sup: getSupplierName(oi.supplier_id) || '未指定',
+      cat: item?.category || '', name: item?.name || '', spec: item?.spec || '',
+      unit: item?.unit || '', qty: oi.ordered_qty, price, total: price ? oi.ordered_qty * price : null
+    });
   }));
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('月度採購彙總');
   ws.columns = [
+    { header: '日期', key: 'date', width: 12 },
+    { header: '門店', key: 'store', width: 14 },
     { header: '廠商', key: 'sup', width: 14 },
+    { header: '類別', key: 'cat', width: 10 },
     { header: '品項', key: 'name', width: 18 },
     { header: '規格', key: 'spec', width: 14 },
     { header: '單位', key: 'unit', width: 8 },
-    { header: '數量合計', key: 'qty', width: 12 },
+    { header: '數量', key: 'qty', width: 10 },
     { header: '單價', key: 'price', width: 10 },
-    { header: '金額小計', key: 'total', width: 12 }
+    { header: '金額', key: 'total', width: 12 }
   ];
   styleHeader(ws);
-  Object.values(rows).sort((a, b) => a.sup.localeCompare(b.sup)).forEach(r => {
-    ws.addRow({ ...r, total: r.price ? r.qty * r.price : null });
-  });
+  rows.sort((a, b) => a.date.localeCompare(b.date) || a.store.localeCompare(b.store) || a.sup.localeCompare(b.sup)).forEach(r => ws.addRow(r));
   ws.getColumn('qty').numFmt = '#,##0.##';
   ws.getColumn('price').numFmt = '#,##0';
   ws.getColumn('total').numFmt = '#,##0';

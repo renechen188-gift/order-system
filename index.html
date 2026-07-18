@@ -308,6 +308,7 @@
   <div id="receivePage" class="page"></div>
   <div id="historyPage" class="page"></div>
   <div id="summaryPage" class="page"></div>
+  <div id="kitchenSummaryPage" class="page"></div>
   <div id="pricePage" class="page"></div>
   <div id="fulfillPage" class="page"></div>
   <div id="itemsPage" class="page"></div>
@@ -401,7 +402,7 @@ async function initApp() {
 function buildTabs() {
   const tabs = [];
   if (currentUser.role === 'admin') {
-    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'price', label: '價格審核' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
+    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
   } else if (currentUser.role === 'kitchen') {
     tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
   } else {
@@ -447,7 +448,7 @@ async function loadData() {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('#mainTabs .view-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['order', 'receive', 'history', 'summary', 'price', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer'].forEach(id => {
+  ['order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer'].forEach(id => {
     const el = document.getElementById(id + 'Page');
     if (el) el.classList.toggle('active', id === tab);
   });
@@ -457,6 +458,7 @@ function switchTab(tab) {
   if (tab === 'summary') loadSummary();
   if (tab === 'price') loadPriceReviews();
   if (tab === 'fulfill') loadFulfill();
+  if (tab === 'kitchenSummary') loadKitchenSummary();
   if (tab === 'items') loadItemsManagement();
   if (tab === 'count') loadCount();
   if (tab === 'transfer') loadTransfer();
@@ -726,6 +728,54 @@ function copyToClipboard(id) {
     btn.textContent = '✅ 已複製';
     setTimeout(() => btn.textContent = '📋 複製採購單文字', 2000);
   });
+}
+
+// ══════════ KITCHEN SUMMARY (Admin) ══════════
+async function loadKitchenSummary() {
+  const el = document.getElementById('kitchenSummaryPage');
+  el.innerHTML = '<div class="section-bar">央廚叫貨彙總（今日）</div><div class="loading">載入中…</div>';
+  const today = new Date().toISOString().split('T')[0];
+  const { data: orders } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_date', today).eq('order_type', 'internal').in('status', ['submitted', 'confirmed', 'received']);
+
+  if (!orders?.length) { el.innerHTML = '<div class="section-bar">央廚叫貨彙總（今日）</div><div class="empty-state"><div class="icon">📋</div><div class="msg">今日尚無央廚叫貨單</div></div>'; return; }
+
+  const itemTotals = {};
+  orders.forEach(order => {
+    (order.order_items || []).forEach(oi => {
+      const item = oi.items;
+      const key = item?.id || oi.item_id;
+      if (!itemTotals[key]) itemTotals[key] = { name: item?.name || '', unit: item?.unit || '', total: 0, stores: [] };
+      itemTotals[key].total += oi.ordered_qty;
+      itemTotals[key].stores.push({ store: order.stores?.name || '', qty: oi.ordered_qty });
+    });
+  });
+
+  const itemList = Object.values(itemTotals);
+  const statusText = orders.every(o => o.status === 'confirmed' || o.status === 'received') ? '已出貨' : '待出貨';
+  const statusClass = statusText === '已出貨' ? 'status-done' : 'status-preparing';
+
+  let copyText = `🍳 央廚出貨單\n📅 ${today}\n`;
+  const storeGroups = {};
+  itemList.forEach(it => {
+    it.stores.forEach(s => {
+      if (!storeGroups[s.store]) storeGroups[s.store] = [];
+      storeGroups[s.store].push({ name: it.name, qty: s.qty, unit: it.unit });
+    });
+  });
+  for (const [store, sItems] of Object.entries(storeGroups)) {
+    const shortName = store.replace('麻媽家','').replace('涼三伯','');
+    copyText += `\n📍 ${shortName}：\n`;
+    sItems.forEach(si => { copyText += `  ${si.name} ${si.qty}${si.unit}\n`; });
+  }
+  copyText += `\n合計 ${itemList.length} 項品項，${orders.length} 間門店`;
+
+  let html = '<div class="section-bar">央廚叫貨彙總（今日 ' + today + '）</div>';
+  html += `<div class="card"><div class="card-header"><div class="card-header-left"><div class="card-supplier">央廚出貨單</div><div class="card-date">${orders.length} 間門店 · ${itemList.length} 項品項</div></div><span class="card-status ${statusClass}">${statusText}</span></div>`;
+  itemList.forEach(it => {
+    html += `<div class="card-row"><div class="cr-info"><div class="cr-name">${it.name}</div><div class="cr-sub">${it.stores.map(s => `<span class="fulfill-store">${s.store.replace('麻媽家','').replace('涼三伯','')} ${s.qty}</span>`).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--purple);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
+  });
+  html += `<div class="copy-text" id="copy-kitchen">${copyText}</div><button class="copy-btn" onclick="copyToClipboard('copy-kitchen')">📋 複製央廚出貨單（貼LINE）</button></div>`;
+  el.innerHTML = html;
 }
 
 // ══════════ PRICE REVIEWS (Admin) ══════════

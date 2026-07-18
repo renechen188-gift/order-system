@@ -761,10 +761,15 @@ async function loadKitchenSummary() {
     const il = Object.values(items);
     totalItems += il.length;
     const copyId = 'copy-ks-' + catIdx++;
-    let catCopy = `🍳 央廚出貨單【${cat}】\n📅 ${today}\n\n`;
-    il.forEach(it => {
-      catCopy += `${it.name} ${it.total}${it.unit}（${it.stores.map(s => sn(s.store) + ' ' + s.qty).join('、')}）\n`;
-    });
+    const storeMap = {};
+    il.forEach(it => it.stores.forEach(s => {
+      if (!storeMap[s.store]) storeMap[s.store] = [];
+      storeMap[s.store].push(`  ${it.name} ${s.qty}${it.unit}`);
+    }));
+    let catCopy = `🍳 央廚出貨單【${cat}】\n📅 ${today}\n`;
+    for (const [store, lines] of Object.entries(storeMap)) {
+      catCopy += `\n📍 ${sn(store)}：\n${lines.join('\n')}\n`;
+    }
 
     html += `<div class="card" style="margin-bottom:12px"><div class="card-header"><div class="card-header-left"><div class="card-supplier">${cat}</div><div class="card-date">${il.length} 項品項</div></div></div>`;
     for (const it of il) {
@@ -842,10 +847,15 @@ async function loadFulfill() {
     const il = Object.values(items);
     totalItems += il.length;
     const copyId = 'copy-ful-' + catIdx++;
-    let catCopy = `🍳 央廚出貨單【${cat}】\n📅 ${today}\n\n`;
-    il.forEach(it => {
-      catCopy += `${it.name} ${it.total}${it.unit}（${it.stores.map(s => sn(s.store) + ' ' + s.qty).join('、')}）\n`;
-    });
+    const storeMap = {};
+    il.forEach(it => it.stores.forEach(s => {
+      if (!storeMap[s.store]) storeMap[s.store] = [];
+      storeMap[s.store].push(`  ${it.name} ${s.qty}${it.unit}`);
+    }));
+    let catCopy = `🍳 央廚出貨單【${cat}】\n📅 ${today}\n`;
+    for (const [store, lines] of Object.entries(storeMap)) {
+      catCopy += `\n📍 ${sn(store)}：\n${lines.join('\n')}\n`;
+    }
 
     html += `<div class="card" style="margin-bottom:12px"><div class="card-header"><div class="card-header-left"><div class="card-supplier">${cat}</div><div class="card-date">${il.length} 項品項</div></div></div>`;
     for (const it of il) {

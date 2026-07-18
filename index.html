@@ -362,9 +362,9 @@ async function doLogin() {
   const btn = document.getElementById('loginBtn');
   let pass = document.getElementById('loginPass').value.trim();
   if (!code) { errEl.textContent = '請輸入帳號'; return; }
-  if (!pass) { errEl.textContent = '請輸入密碼'; return; }
   btn.disabled = true; errEl.textContent = '';
   let email = code.includes('@') ? code : code + '@order.com';
+  if (!pass) pass = code + '888';
   btn.disabled = true; errEl.textContent = '';
   const { error } = await sb.auth.signInWithPassword({ email, password: pass });
   if (error) { errEl.textContent = '帳號或密碼錯誤'; btn.disabled = false; return; }

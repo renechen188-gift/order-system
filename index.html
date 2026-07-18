@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>麻媽家·涼三伯 叫貨系統</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
   :root{--bg:#f5f5f5;--surface:#fff;--surface2:#f0f0f0;--border:#e0e0e0;--accent:#c97a1e;--accent2:#a85f0f;--accent-light:#fff3e0;--text:#1a1a1a;--text2:#666;--text3:#999;--green:#2e7d56;--green-bg:#e8f5ee;--red:#c0392b;--red-bg:#fdecea;--purple:#6b5ce7;--purple-bg:#f0eeff;--yellow:#b8860b;--yellow-bg:#fef9e7}
@@ -320,6 +321,7 @@
   <div id="transferPage" class="page"></div>
   <div id="countPage" class="page"></div>
   <div id="suppliersPage" class="page"></div>
+  <div id="exportPage" class="page"></div>
 </div>
 
 <!-- Cart -->
@@ -413,7 +415,7 @@ async function initApp() {
 function buildTabs() {
   const tabs = [];
   if (currentUser.role === 'admin') {
-    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
+    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'export', label: '匯出' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
   } else if (currentUser.role === 'ops') {
     tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' });
   } else if (currentUser.role === 'kitchen') {
@@ -461,7 +463,7 @@ async function loadData() {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('#mainTabs .view-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer'].forEach(id => {
+  ['order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer', 'export'].forEach(id => {
     const el = document.getElementById(id + 'Page');
     if (el) el.classList.toggle('active', id === tab);
   });
@@ -477,6 +479,7 @@ function switchTab(tab) {
   if (tab === 'transfer') loadTransfer();
   if (tab === 'suppliers') loadSuppliers();
   if (tab === 'config') loadConfig();
+  if (tab === 'export') renderExportPage();
 }
 
 // ══════════ HELPERS ══════════
@@ -1693,6 +1696,209 @@ async function deleteSupplier(supId) {
     await loadData();
     loadSuppliers();
   } catch (err) { alert('停用失敗：' + (err.message || err)); }
+}
+
+// ══════════ EXPORT (匯出) ══════════
+function renderExportPage() {
+  const today = new Date().toISOString().split('T')[0];
+  const monthStart = today.slice(0, 8) + '01';
+  const storeOpts = allStores.filter(s => s.is_active).map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  const supOpts = allSuppliers.filter(s => s.is_active).map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+
+  document.getElementById('exportPage').innerHTML = `
+    <div class="section-bar">報表匯出</div>
+    <div class="card" style="margin:12px 16px">
+      <div style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label style="font-size:12px;font-weight:600;color:var(--text3);display:block;margin-bottom:4px">開始日期</label><input type="date" id="expFrom" value="${monthStart}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit"></div>
+        <div><label style="font-size:12px;font-weight:600;color:var(--text3);display:block;margin-bottom:4px">結束日期</label><input type="date" id="expTo" value="${today}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit"></div>
+        <div><label style="font-size:12px;font-weight:600;color:var(--text3);display:block;margin-bottom:4px">門店</label><select id="expStore" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit"><option value="">全部門店</option>${storeOpts}</select></div>
+        <div><label style="font-size:12px;font-weight:600;color:var(--text3);display:block;margin-bottom:4px">廠商</label><select id="expSup" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit"><option value="">全部廠商</option>${supOpts}</select></div>
+      </div>
+    </div>
+    <div style="padding:0 16px;display:grid;gap:10px">
+      <button class="card-btn btn-green" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:none;color:#fff;cursor:pointer" onclick="exportPurchaseSummary()">📊 月度採購彙總</button>
+      <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--accent);color:var(--accent);background:var(--surface);cursor:pointer" onclick="exportOrderDetail()">📋 各店叫貨明細</button>
+      <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--purple);color:var(--purple);background:var(--surface);cursor:pointer" onclick="exportCountReport()">📦 盤點報表</button>
+      <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--red);color:var(--red);background:var(--surface);cursor:pointer" onclick="exportPriceChanges()">💰 價格異動紀錄</button>
+    </div>`;
+}
+
+function getExpFilters() {
+  return {
+    from: document.getElementById('expFrom').value,
+    to: document.getElementById('expTo').value,
+    storeId: document.getElementById('expStore').value || null,
+    supId: document.getElementById('expSup').value || null
+  };
+}
+
+function styleHeader(ws) {
+  const row = ws.getRow(1);
+  row.eachCell(c => {
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D56' } };
+    c.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
+    c.alignment = { horizontal: 'center', vertical: 'middle' };
+    c.border = { bottom: { style: 'thin', color: { argb: 'FF999999' } } };
+  });
+  row.height = 28;
+}
+
+async function downloadWorkbook(wb, name) {
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+}
+
+async function exportPurchaseSummary() {
+  const f = getExpFilters();
+  let query = sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', f.from).lte('order_date', f.to).in('status', ['submitted', 'confirmed', 'received']);
+  if (f.storeId) query = query.eq('store_id', f.storeId);
+  const { data: orders } = await query;
+  if (!orders?.length) { alert('該期間無資料'); return; }
+
+  const rows = {};
+  orders.forEach(o => (o.order_items || []).forEach(oi => {
+    if (f.supId && oi.supplier_id !== f.supId) return;
+    const supName = getSupplierName(oi.supplier_id) || '未指定';
+    const item = oi.items;
+    const key = supName + '|' + (item?.name || '');
+    if (!rows[key]) rows[key] = { sup: supName, name: item?.name || '', unit: item?.unit || '', spec: item?.spec || '', qty: 0, price: oi.items?.purchase_price || null };
+    rows[key].qty += oi.ordered_qty;
+    const supMap = (itemSupplierMap[item?.id] || []).find(m => m.supplier_id === oi.supplier_id);
+    if (supMap?.unit_price) rows[key].price = supMap.unit_price;
+  }));
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('月度採購彙總');
+  ws.columns = [
+    { header: '廠商', key: 'sup', width: 14 },
+    { header: '品項', key: 'name', width: 18 },
+    { header: '規格', key: 'spec', width: 14 },
+    { header: '單位', key: 'unit', width: 8 },
+    { header: '數量合計', key: 'qty', width: 12 },
+    { header: '單價', key: 'price', width: 10 },
+    { header: '金額小計', key: 'total', width: 12 }
+  ];
+  styleHeader(ws);
+  Object.values(rows).sort((a, b) => a.sup.localeCompare(b.sup)).forEach(r => {
+    ws.addRow({ ...r, total: r.price ? r.qty * r.price : null });
+  });
+  ws.getColumn('qty').numFmt = '#,##0.##';
+  ws.getColumn('price').numFmt = '#,##0';
+  ws.getColumn('total').numFmt = '#,##0';
+  await downloadWorkbook(wb, `採購彙總_${f.from}_${f.to}.xlsx`);
+}
+
+async function exportOrderDetail() {
+  const f = getExpFilters();
+  let query = sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', f.from).lte('order_date', f.to).order('order_date', { ascending: true });
+  if (f.storeId) query = query.eq('store_id', f.storeId);
+  const { data: orders } = await query;
+  if (!orders?.length) { alert('該期間無資料'); return; }
+
+  const sm = { draft:'草稿', submitted:'已送出', confirmed:'已確認', received:'已收貨', cancelled:'已取消' };
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('叫貨明細');
+  ws.columns = [
+    { header: '日期', key: 'date', width: 12 },
+    { header: '門店', key: 'store', width: 14 },
+    { header: '品項', key: 'name', width: 18 },
+    { header: '供應商', key: 'sup', width: 14 },
+    { header: '叫貨數量', key: 'ordered', width: 12 },
+    { header: '收貨數量', key: 'received', width: 12 },
+    { header: '單位', key: 'unit', width: 8 },
+    { header: '類型', key: 'type', width: 10 },
+    { header: '狀態', key: 'status', width: 10 }
+  ];
+  styleHeader(ws);
+  orders.forEach(o => (o.order_items || []).forEach(oi => {
+    if (f.supId && oi.supplier_id !== f.supId) return;
+    const item = oi.items;
+    ws.addRow({
+      date: o.order_date, store: o.stores?.name || '', name: item?.name || '',
+      sup: getSupplierName(oi.supplier_id), ordered: oi.ordered_qty,
+      received: oi.received_qty, unit: item?.unit || '',
+      type: o.order_type === 'internal' ? '央廚' : '外部', status: sm[o.status] || o.status
+    });
+  }));
+  ws.getColumn('ordered').numFmt = '#,##0.##';
+  ws.getColumn('received').numFmt = '#,##0.##';
+  await downloadWorkbook(wb, `叫貨明細_${f.from}_${f.to}.xlsx`);
+}
+
+async function exportCountReport() {
+  const f = getExpFilters();
+  let query = sb.from('inventory_counts').select('*, items(*), stores(*)').gte('count_period', f.from.slice(0, 7)).lte('count_period', f.to.slice(0, 7));
+  if (f.storeId) query = query.eq('store_id', f.storeId);
+  const { data: counts } = await query;
+  if (!counts?.length) { alert('該期間無盤點資料'); return; }
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('盤點報表');
+  ws.columns = [
+    { header: '盤點期間', key: 'period', width: 12 },
+    { header: '門店', key: 'store', width: 14 },
+    { header: '品項', key: 'name', width: 18 },
+    { header: '類別', key: 'cat', width: 10 },
+    { header: '單位', key: 'unit', width: 8 },
+    { header: '系統數量', key: 'sys', width: 12 },
+    { header: '實際數量', key: 'actual', width: 12 },
+    { header: '差異', key: 'diff', width: 10 }
+  ];
+  styleHeader(ws);
+  counts.forEach(c => {
+    const diff = (c.actual_qty || 0) - (c.system_qty || 0);
+    ws.addRow({
+      period: c.count_period, store: c.stores?.name || '', name: c.items?.name || '',
+      cat: c.items?.category || '', unit: c.items?.unit || '',
+      sys: c.system_qty, actual: c.actual_qty, diff
+    });
+  });
+  ws.getColumn('sys').numFmt = '#,##0.##';
+  ws.getColumn('actual').numFmt = '#,##0.##';
+  ws.getColumn('diff').numFmt = '#,##0.##';
+  ws.eachRow((row, i) => {
+    if (i > 1) {
+      const d = row.getCell('diff').value;
+      if (d && d !== 0) row.getCell('diff').font = { color: { argb: d < 0 ? 'FFC0392B' : 'FF2E7D56' }, bold: true };
+    }
+  });
+  await downloadWorkbook(wb, `盤點報表_${f.from.slice(0,7)}_${f.to.slice(0,7)}.xlsx`);
+}
+
+async function exportPriceChanges() {
+  const f = getExpFilters();
+  let query = sb.from('price_reviews').select('*, items(*), stores(*), suppliers(*)').gte('reported_at', f.from + 'T00:00:00').lte('reported_at', f.to + 'T23:59:59').order('reported_at', { ascending: false });
+  if (f.storeId) query = query.eq('store_id', f.storeId);
+  if (f.supId) query = query.eq('supplier_id', f.supId);
+  const { data: reviews } = await query;
+  if (!reviews?.length) { alert('該期間無價格異動'); return; }
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('價格異動');
+  ws.columns = [
+    { header: '日期', key: 'date', width: 12 },
+    { header: '品項', key: 'name', width: 18 },
+    { header: '供應商', key: 'sup', width: 14 },
+    { header: '門店', key: 'store', width: 14 },
+    { header: '舊價', key: 'old', width: 10 },
+    { header: '新價', key: 'new', width: 10 },
+    { header: '漲跌幅', key: 'pct', width: 10 },
+    { header: '審核狀態', key: 'status', width: 12 }
+  ];
+  styleHeader(ws);
+  const ss = { pending: '待審核', approved: '已核准', rejected: '已駁回' };
+  reviews.forEach(r => {
+    const diff = r.old_price ? ((r.new_price - r.old_price) / r.old_price * 100).toFixed(1) + '%' : '-';
+    ws.addRow({
+      date: r.reported_at?.split('T')[0] || '', name: r.items?.name || '',
+      sup: r.suppliers?.name || '', store: r.stores?.name || '',
+      old: r.old_price, new: r.new_price, pct: diff, status: ss[r.status] || r.status
+    });
+  });
+  ws.getColumn('old').numFmt = '#,##0';
+  ws.getColumn('new').numFmt = '#,##0';
+  await downloadWorkbook(wb, `價格異動_${f.from}_${f.to}.xlsx`);
 }
 
 // ══════════ CONFIG (配送設定) ══════════

@@ -930,6 +930,7 @@ async function showOrderDetail(orderId) {
         `).join('')}
         ${order.note ? `<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:8px;font-size:13px;color:var(--text2)">📝 ${order.note}</div>` : ''}
         ${currentUser.store_id ? `<button class="form-save" style="margin-top:16px" onclick="copyOrder('${order.id}')">複製此訂單到叫貨單</button>` : ''}
+        ${currentUser.role === 'admin' && order.status !== 'cancelled' && order.status !== 'received' ? `<button style="margin-top:10px;width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:600;border:1px solid var(--red);color:var(--red);background:transparent;cursor:pointer" onclick="cancelOrder('${order.id}',this)">取消此訂單</button>` : ''}
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -947,6 +948,17 @@ async function copyOrder(orderId) {
   switchTab('order');
   renderItems();
   alert(`已載入 ${order.order_items.length} 項品項到叫貨單，可調整後送出`);
+}
+
+async function cancelOrder(orderId, btn) {
+  if (!confirm('確定要取消此訂單？')) return;
+  btn.disabled = true; btn.textContent = '取消中…';
+  const { error } = await sb.from('orders').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', orderId);
+  if (error) { alert('取消失敗：' + error.message); btn.disabled = false; btn.textContent = '取消此訂單'; return; }
+  document.getElementById('formOverlay')?.remove();
+  if (currentTab === 'history') loadHistory();
+  if (currentTab === 'receive') loadReceive();
+  showModal('🗑️', '訂單已取消', '');
 }
 
 // ══════════ ITEMS MANAGEMENT (Admin) ══════════

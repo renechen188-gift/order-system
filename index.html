@@ -475,7 +475,11 @@ function getItemSupplierType(item) {
   const sup = allSuppliers.find(s => s.id === (maps.find(m => m.is_default) || maps[0]).supplier_id);
   return sup?.type === 'central_kitchen' ? 'internal' : 'external';
 }
-function getDefaultSupplier(itemId) { const maps = itemSupplierMap[itemId] || []; return (maps.find(m => m.is_default) || maps[0])?.supplier_id || null; }
+function getDefaultSupplier(itemId) {
+  const maps = itemSupplierMap[itemId] || [];
+  const avail = currentUser.role === 'admin' ? maps : maps.filter(m => storeSuppliers.includes(m.supplier_id));
+  return (avail.find(m => m.is_default) || avail[0])?.supplier_id || (maps.find(m => m.is_default) || maps[0])?.supplier_id || null;
+}
 
 // ══════════ ORDER PAGE ══════════
 function renderOrderPage() {

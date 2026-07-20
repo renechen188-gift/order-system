@@ -706,13 +706,15 @@ async function loadHistory() {
 }
 
 // ══════════ SUPPLIER SUMMARY (Admin) ══════════
+let summaryDate = new Date().toISOString().split('T')[0];
 async function loadSummary() {
   const el = document.getElementById('summaryPage');
-  el.innerHTML = '<div class="section-bar">廠商彙總採購單（今日）</div><div class="loading">載入中…</div>';
-  const today = new Date().toISOString().split('T')[0];
-  const { data: orders } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_date', today).eq('order_type', 'external').in('status', ['submitted', 'confirmed', 'received']);
+  el.innerHTML = '<div class="section-bar">廠商彙總採購單</div><div class="loading">載入中…</div>';
+  const { data: orders } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_date', summaryDate).eq('order_type', 'external').in('status', ['submitted', 'confirmed', 'received']);
 
-  if (!orders?.length) { el.innerHTML = '<div class="section-bar">廠商彙總採購單（今日）</div><div class="empty-state"><div class="icon">📋</div><div class="msg">今日尚無外部叫貨單</div></div>'; return; }
+  const datePicker = `<div style="padding:12px 16px 0;display:flex;align-items:center;gap:8px"><span style="font-size:13px;color:var(--text3)">查詢日期：</span><input type="date" value="${summaryDate}" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit" onchange="summaryDate=this.value;loadSummary()"><button style="padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);cursor:pointer;font-family:inherit" onclick="summaryDate=new Date().toISOString().split('T')[0];loadSummary()">今日</button></div>`;
+
+  if (!orders?.length) { el.innerHTML = '<div class="section-bar">廠商彙總採購單</div>' + datePicker + '<div class="empty-state"><div class="icon">📋</div><div class="msg">' + summaryDate + ' 無外部叫貨單</div></div>'; return; }
 
   // Aggregate by supplier
   const supTotals = {};
@@ -729,7 +731,7 @@ async function loadSummary() {
     });
   });
 
-  let html = '<div class="section-bar">廠商彙總採購單（今日 ' + today + '）</div>';
+  let html = '<div class="section-bar">廠商彙總採購單（' + summaryDate + '）</div>' + datePicker;
   for (const [supName, data] of Object.entries(supTotals)) {
     const itemList = Object.values(data.items);
     // Build copy text grouped by store
@@ -740,7 +742,7 @@ async function loadSummary() {
         storeGroups[s.store].push({ name: it.name, qty: s.qty, unit: it.unit });
       });
     });
-    let copyText = `📋 麻媽家·涼三伯 採購單\n📅 ${today}\n\n${supName} 您好，以下為今日訂單：\n`;
+    let copyText = `📋 麻媽家·涼三伯 採購單\n📅 ${summaryDate}\n\n${supName} 您好，以下為今日訂單：\n`;
     const brandStores = { '🔴 麻媽家': [], '🔵 涼三伯': [] };
     for (const [store, sItems] of Object.entries(storeGroups)) {
       const brand = store.startsWith('涼三伯') ? '🔵 涼三伯' : '🔴 麻媽家';
@@ -940,6 +942,13 @@ async function showOrderDetail(orderId) {
     supGroups[sn].push(oi);
   });
 
+  const isAdminOrOps = currentUser.role === 'admin' || currentUser.role === 'ops';
+  const isOwner = currentUser.store_id && currentUser.store_id === order.store_id;
+  const today = new Date().toISOString().split('T')[0];
+  const notDone = order.status !== 'cancelled' && order.status !== 'received';
+  const canEdit = notDone && (isAdminOrOps || (isOwner && order.status === 'submitted' && order.order_date === today));
+  const canCancel = notDone && (isAdminOrOps || (isOwner && order.status === 'submitted' && order.order_date === today));
+
   document.getElementById('formOverlay')?.remove();
   const overlay = document.createElement('div');
   overlay.id = 'formOverlay';
@@ -965,16 +974,18 @@ async function showOrderDetail(orderId) {
             const isShort = received && oi.received_qty < oi.ordered_qty;
             return `<div style="display:flex;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);gap:8px">
               <div style="flex:1;font-size:14px;font-weight:500">${item?.name || ''}</div>
-              <div style="text-align:right;font-size:13px">
-                <span style="color:var(--text2)">叫 ${oi.ordered_qty} ${item?.unit || ''}</span>
-                ${received ? `<span style="margin-left:6px;color:${isShort ? 'var(--red)' : 'var(--green)'};font-weight:600">收 ${oi.received_qty}</span>` : ''}
+              <div style="display:flex;align-items:center;gap:6px;font-size:13px">
+                ${canEdit ? `<input type="number" class="edit-qty-input" data-oiid="${oi.id}" value="${oi.ordered_qty}" inputmode="decimal" style="width:50px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-weight:600;text-align:center;font-family:inherit" onfocus="this.select()">` : `<span style="color:var(--text2)">叫 ${oi.ordered_qty}</span>`}
+                <span style="color:var(--text3)">${item?.unit || ''}</span>
+                ${received ? `<span style="margin-left:4px;color:${isShort ? 'var(--red)' : 'var(--green)'};font-weight:600">收 ${oi.received_qty}</span>` : ''}
               </div>
             </div>`;
           }).join('')}
         `).join('')}
         ${order.note ? `<div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:8px;font-size:13px;color:var(--text2)">📝 ${order.note}</div>` : ''}
-        ${currentUser.store_id || currentUser.role === 'admin' ? `<button class="form-save" style="margin-top:16px" onclick="copyOrder('${order.id}')">複製此訂單到叫貨單</button>` : ''}
-        ${currentUser.role === 'admin' && order.status !== 'cancelled' && order.status !== 'received' ? `<button style="margin-top:10px;width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:600;border:1px solid var(--red);color:var(--red);background:transparent;cursor:pointer" onclick="cancelOrder('${order.id}',this)">取消此訂單</button>` : ''}
+        ${canEdit ? `<button class="form-save" style="margin-top:16px" onclick="saveOrderEdits('${order.id}')">💾 儲存修改</button>` : ''}
+        ${currentUser.store_id || isAdminOrOps ? `<button class="form-save" style="margin-top:10px;background:var(--surface2);color:var(--text)" onclick="copyOrder('${order.id}')">複製此訂單到叫貨單</button>` : ''}
+        ${canCancel ? `<button style="margin-top:10px;width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:600;border:1px solid var(--red);color:var(--red);background:transparent;cursor:pointer" onclick="cancelOrder('${order.id}',this)">取消此訂單</button>` : ''}
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -992,6 +1003,27 @@ async function copyOrder(orderId) {
   switchTab('order');
   renderItems();
   alert(`已載入 ${order.order_items.length} 項品項到叫貨單，可調整後送出`);
+}
+
+async function saveOrderEdits(orderId) {
+  const inputs = document.querySelectorAll('.edit-qty-input');
+  const updates = [];
+  inputs.forEach(inp => {
+    const qty = parseFloat(inp.value) || 0;
+    if (qty > 0) updates.push({ id: inp.dataset.oiid, qty });
+  });
+  if (!updates.length) { alert('數量不可全部為 0'); return; }
+  const btn = document.querySelector('.form-save');
+  btn.disabled = true; btn.textContent = '儲存中…';
+  for (const u of updates) {
+    await sb.from('order_items').update({ ordered_qty: u.qty }).eq('id', u.id);
+  }
+  document.getElementById('formOverlay')?.remove();
+  if (currentTab === 'history') loadHistory();
+  if (currentTab === 'receive') loadReceive();
+  if (currentTab === 'summary') loadSummary();
+  if (currentTab === 'kitchenSummary') loadKitchenSummary();
+  showModal('✅', '訂單已修改', `已更新 ${updates.length} 項品項數量`);
 }
 
 async function cancelOrder(orderId, btn) {

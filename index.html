@@ -482,6 +482,8 @@ function switchTab(tab) {
   if (tab === 'export') renderExportPage();
 }
 
+function getToday() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+
 // ══════════ HELPERS ══════════
 function getSupplierName(id) { return allSuppliers.find(s => s.id === id)?.name || ''; }
 function getStoreName(id) { return allStores.find(s => s.id === id)?.name || ''; }
@@ -612,7 +614,7 @@ async function submitOrder() {
     entries.forEach(([itemId, c]) => { groups[getItemSupplierType(allItems.find(i => i.id === itemId))].push({ itemId, ...c }); });
     for (const [type, items] of Object.entries(groups)) {
       if (!items.length) continue;
-      const { data: order, error: oe } = await sb.from('orders').insert({ store_id: storeId, created_by: currentUser.id, order_type: type, status: 'submitted', order_date: new Date().toISOString().split('T')[0], note: document.getElementById('cartNote').value || null }).select().single();
+      const { data: order, error: oe } = await sb.from('orders').insert({ store_id: storeId, created_by: currentUser.id, order_type: type, status: 'submitted', order_date: getToday(), note: document.getElementById('cartNote').value || null }).select().single();
       if (oe) throw oe;
       const { error: ie } = await sb.from('order_items').insert(items.map(i => ({ order_id: order.id, item_id: i.itemId, supplier_id: i.supplierId, ordered_qty: i.qty, status: 'pending' })));
       if (ie) throw ie;
@@ -706,13 +708,13 @@ async function loadHistory() {
 }
 
 // ══════════ SUPPLIER SUMMARY (Admin) ══════════
-let summaryDate = new Date().toISOString().split('T')[0];
+let summaryDate = getToday();
 async function loadSummary() {
   const el = document.getElementById('summaryPage');
   el.innerHTML = '<div class="section-bar">廠商彙總採購單</div><div class="loading">載入中…</div>';
   const { data: orders } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_date', summaryDate).eq('order_type', 'external').in('status', ['submitted', 'confirmed', 'received']);
 
-  const datePicker = `<div style="padding:12px 16px 0;display:flex;align-items:center;gap:8px"><span style="font-size:13px;color:var(--text3)">查詢日期：</span><input type="date" value="${summaryDate}" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit" onchange="summaryDate=this.value;loadSummary()"><button style="padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);cursor:pointer;font-family:inherit" onclick="summaryDate=new Date().toISOString().split('T')[0];loadSummary()">今日</button></div>`;
+  const datePicker = `<div style="padding:12px 16px 0;display:flex;align-items:center;gap:8px"><span style="font-size:13px;color:var(--text3)">查詢日期：</span><input type="date" value="${summaryDate}" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit" onchange="summaryDate=this.value;loadSummary()"><button style="padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);cursor:pointer;font-family:inherit" onclick="summaryDate=getToday();loadSummary()">今日</button></div>`;
 
   if (!orders?.length) { el.innerHTML = '<div class="section-bar">廠商彙總採購單</div>' + datePicker + '<div class="empty-state"><div class="icon">📋</div><div class="msg">' + summaryDate + ' 無外部叫貨單</div></div>'; return; }
 
@@ -786,7 +788,7 @@ function copyToClipboard(id) {
 async function loadKitchenSummary() {
   const el = document.getElementById('kitchenSummaryPage');
   el.innerHTML = '<div class="section-bar">央廚叫貨彙總（今日）</div><div class="loading">載入中…</div>';
-  const today = new Date().toISOString().split('T')[0];
+  const today = getToday();
   const { data: orders } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_date', today).eq('order_type', 'internal').in('status', ['submitted', 'confirmed', 'received']);
 
   if (!orders?.length) { el.innerHTML = '<div class="section-bar">央廚叫貨彙總（今日）</div><div class="empty-state"><div class="icon">📋</div><div class="msg">今日尚無央廚叫貨單</div></div>'; return; }
@@ -871,7 +873,7 @@ async function reviewPrice(id, status) {
 async function loadFulfill() {
   const el = document.getElementById('fulfillPage');
   el.innerHTML = '<div class="section-bar">今日各店叫貨彙總 — 待出貨</div><div class="loading">載入中…</div>';
-  const today = new Date().toISOString().split('T')[0];
+  const today = getToday();
   const { data: orders } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_date', today).eq('order_type', 'internal').in('status', ['submitted', 'confirmed']);
 
   if (!orders?.length) { el.innerHTML = '<div class="section-bar">今日各店叫貨彙總</div><div class="empty-state"><div class="icon">📦</div><div class="msg">今日沒有門店叫貨</div></div>'; return; }
@@ -921,7 +923,7 @@ async function loadFulfill() {
 
 async function fulfillAll(btn) {
   btn.disabled = true; btn.textContent = '處理中…';
-  const today = new Date().toISOString().split('T')[0];
+  const today = getToday();
   await sb.from('orders').update({ status: 'confirmed', updated_at: new Date().toISOString() }).eq('order_date', today).eq('order_type', 'internal').eq('status', 'submitted');
   const card = btn.closest('.card');
   card.querySelector('.card-status').textContent = '已出貨';
@@ -944,7 +946,7 @@ async function showOrderDetail(orderId) {
 
   const isAdminOrOps = currentUser.role === 'admin' || currentUser.role === 'ops';
   const isOwner = currentUser.store_id && currentUser.store_id === order.store_id;
-  const today = new Date().toISOString().split('T')[0];
+  const today = getToday();
   const notDone = order.status !== 'cancelled' && order.status !== 'received';
   const canEdit = notDone && (isAdminOrOps || (isOwner && order.status === 'submitted' && order.order_date === today));
   const canCancel = notDone && (isAdminOrOps || (isOwner && order.status === 'submitted' && order.order_date === today));
@@ -1732,7 +1734,7 @@ async function deleteSupplier(supId) {
 
 // ══════════ EXPORT (匯出) ══════════
 function renderExportPage() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getToday();
   const monthStart = today.slice(0, 8) + '01';
   const storeOpts = allStores.filter(s => s.is_active).map(s => `<option value="${s.id}">${s.name}</option>`).join('');
   const supOpts = allSuppliers.filter(s => s.is_active).map(s => `<option value="${s.id}">${s.name}</option>`).join('');

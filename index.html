@@ -1044,7 +1044,7 @@ let itemsFilter = 'ALL';
 
 async function loadItemsManagement() {
   const el = document.getElementById('itemsPage');
-  const types = { material: '食材', packaging: '包材', semi: '半成品', product: '成品' };
+  const types = { material: '食材', packaging: '包材/清潔品', semi: '半成品', product: '成品' };
   const cats = ['ALL', ...new Set(allItems.map(i => i.category))];
 
   let filtered = allItems;
@@ -1069,7 +1069,7 @@ async function loadItemsManagement() {
 function openItemForm(itemId) {
   const item = itemId ? allItems.find(i => i.id === itemId) : null;
   const isEdit = !!item;
-  const types = [{ v: 'material', l: '食材' }, { v: 'packaging', l: '包材' }, { v: 'semi', l: '半成品' }, { v: 'product', l: '成品' }];
+  const types = [{ v: 'material', l: '食材' }, { v: 'packaging', l: '包材/清潔品' }, { v: 'semi', l: '半成品' }, { v: 'product', l: '成品' }];
   const scopes = ['ALL', '麻媽家', '涼三伯'];
   const itemMaps = isEdit ? (itemSupplierMap[item.id] || []) : [];
 

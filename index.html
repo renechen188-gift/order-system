@@ -821,9 +821,15 @@ async function loadKitchenSummary() {
       storeMap[s.store].push(`  ${it.name} ${s.qty}${it.unit}`);
     }));
     let catCopy = `🍳 央廚出貨單【${cat}】\n📅 ${today}\n`;
+    const brandStores = { '🔴 麻媽家': [], '🔵 涼三伯': [] };
     for (const [store, lines] of Object.entries(storeMap)) {
-      const brand = store.startsWith('涼三伯') ? '🔵' : '🔴';
-      catCopy += `\n${brand} ${sn(store)}：\n${lines.join('\n')}\n`;
+      const brand = store.startsWith('涼三伯') ? '🔵 涼三伯' : '🔴 麻媽家';
+      brandStores[brand].push({ store, lines });
+    }
+    for (const [brand, stores] of Object.entries(brandStores)) {
+      if (!stores.length) continue;
+      catCopy += `\n━━ ${brand} ━━\n`;
+      stores.forEach(({ store, lines }) => { catCopy += `\n📍 ${sn(store)}：\n${lines.join('\n')}\n`; });
     }
 
     html += `<div class="card" style="margin-bottom:12px"><div class="card-header"><div class="card-header-left"><div class="card-supplier">${cat}</div><div class="card-date">${il.length} 項品項</div></div></div>`;
@@ -907,9 +913,15 @@ async function loadFulfill() {
       storeMap[s.store].push(`  ${it.name} ${s.qty}${it.unit}`);
     }));
     let catCopy = `🍳 央廚出貨單【${cat}】\n📅 ${today}\n`;
+    const brandStores = { '🔴 麻媽家': [], '🔵 涼三伯': [] };
     for (const [store, lines] of Object.entries(storeMap)) {
-      const brand = store.startsWith('涼三伯') ? '🔵' : '🔴';
-      catCopy += `\n${brand} ${sn(store)}：\n${lines.join('\n')}\n`;
+      const brand = store.startsWith('涼三伯') ? '🔵 涼三伯' : '🔴 麻媽家';
+      brandStores[brand].push({ store, lines });
+    }
+    for (const [brand, stores] of Object.entries(brandStores)) {
+      if (!stores.length) continue;
+      catCopy += `\n━━ ${brand} ━━\n`;
+      stores.forEach(({ store, lines }) => { catCopy += `\n📍 ${sn(store)}：\n${lines.join('\n')}\n`; });
     }
 
     html += `<div class="card" style="margin-bottom:12px"><div class="card-header"><div class="card-header-left"><div class="card-supplier">${cat}</div><div class="card-date">${il.length} 項品項</div></div></div>`;

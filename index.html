@@ -665,9 +665,12 @@ async function confirmReceive(btn, orderId) {
   btn.disabled = true; btn.textContent = '處理中…';
   const card = btn.closest('.card');
   try {
+    const rcvItems = [];
     for (const inp of card.querySelectorAll('.cr-input')) {
       const rq = parseFloat(inp.value) || 0;
-      await sb.from('order_items').update({ received_qty: rq, status: rq < parseFloat(inp.dataset.exp) ? 'short' : 'received', received_by: currentUser.id, received_at: new Date().toISOString() }).eq('id', inp.dataset.oiid);
+      const oiid = inp.dataset.oiid;
+      await sb.from('order_items').update({ received_qty: rq, status: rq < parseFloat(inp.dataset.exp) ? 'short' : 'received', received_by: currentUser.id, received_at: new Date().toISOString() }).eq('id', oiid);
+      if (rq > 0) rcvItems.push({ oiid, qty: rq });
     }
     for (const inp of card.querySelectorAll('.rcv-price-input')) {
       const sysStr = inp.dataset.sys;
@@ -675,7 +678,6 @@ async function confirmReceive(btn, orderId) {
       const itemId = inp.dataset.itemid;
       if (!itemId || !nw) continue;
       if (sysStr === '' || sysStr === 'null') {
-        // First time price entry - update item directly
         await sb.from('items').update({ purchase_price: nw }).eq('id', itemId);
       } else {
         const sys = parseFloat(sysStr);
@@ -686,6 +688,20 @@ async function confirmReceive(btn, orderId) {
       }
     }
     await sb.from('orders').update({ status: 'received', updated_at: new Date().toISOString() }).eq('id', orderId);
+
+    if (rcvItems.length) {
+      const { data: order } = await sb.from('orders').select('store_id, order_items(id, item_id)').eq('id', orderId).single();
+      if (order) {
+        const oiMap = {};
+        (order.order_items || []).forEach(oi => { oiMap[oi.id] = oi.item_id; });
+        const ledgerRows = rcvItems.filter(r => oiMap[r.oiid]).map(r => ({
+          store_id: order.store_id, item_id: oiMap[r.oiid], change_qty: r.qty,
+          type: 'receive', reference_id: orderId, note: '收貨入庫'
+        }));
+        if (ledgerRows.length) await sb.from('stock_ledger').insert(ledgerRows);
+      }
+    }
+
     const st = card.querySelector('.card-status'); st.textContent = '已確認'; st.className = 'card-status status-done';
     btn.textContent = '已確認 ✓'; btn.style.background = 'var(--surface2)'; btn.style.color = 'var(--green)';
     if ([...card.querySelectorAll('.rcv-price-input')].some(i => parseFloat(i.value) !== parseFloat(i.dataset.sys)))
@@ -937,7 +953,24 @@ async function loadFulfill() {
 async function fulfillAll(btn) {
   btn.disabled = true; btn.textContent = '處理中…';
   const today = getToday();
+  const { data: orders } = await sb.from('orders').select('id, store_id, order_items(item_id, ordered_qty)').eq('order_date', today).eq('order_type', 'internal').eq('status', 'submitted');
   await sb.from('orders').update({ status: 'confirmed', updated_at: new Date().toISOString() }).eq('order_date', today).eq('order_type', 'internal').eq('status', 'submitted');
+
+  if (orders?.length && currentUser.store_id) {
+    const ledgerRows = [];
+    orders.forEach(order => {
+      (order.order_items || []).forEach(oi => {
+        if (oi.ordered_qty > 0) {
+          ledgerRows.push({
+            store_id: currentUser.store_id, item_id: oi.item_id, change_qty: -oi.ordered_qty,
+            type: 'fulfill', reference_id: order.id, note: '央廚出貨'
+          });
+        }
+      });
+    });
+    if (ledgerRows.length) await sb.from('stock_ledger').insert(ledgerRows);
+  }
+
   const card = btn.closest('.card');
   card.querySelector('.card-status').textContent = '已出貨';
   card.querySelector('.card-status').className = 'card-status status-done';
@@ -1376,13 +1409,19 @@ async function reviewCountSheet(sheetId, period) {
   const { data: sheet } = await sb.from('count_sheets').select('*, stores(name)').eq('id', sheetId).single();
   if (!sheet) return;
 
-  const { data: counts } = await sb.from('inventory_counts').select('*').eq('store_id', sheet.store_id).eq('count_period', period);
+  const [{ data: counts }, { data: balances }] = await Promise.all([
+    sb.from('inventory_counts').select('*').eq('store_id', sheet.store_id).eq('count_period', period),
+    sb.from('stock_balance').select('item_id, qty').eq('store_id', sheet.store_id)
+  ]);
   const countMap = {};
   (counts || []).forEach(c => { countMap[c.item_id] = c; });
+  const sysMap = {};
+  (balances || []).forEach(b => { sysMap[b.item_id] = parseFloat(b.qty) || 0; });
 
   const items = allItems.filter(i => i.needs_count);
   let totalValue = 0;
-  items.forEach(i => { if (countMap[i.id]) totalValue += (countMap[i.id].actual_qty || 0) * (i.purchase_price || 0); });
+  let diffCount = 0;
+  items.forEach(i => { if (countMap[i.id]) { totalValue += (countMap[i.id].actual_qty || 0) * (i.purchase_price || 0); if (countMap[i.id].actual_qty !== (sysMap[i.id] || 0)) diffCount++; } });
 
   const hasData = counts && counts.length > 0;
   const canApprove = sheet.status === 'completed';
@@ -1394,14 +1433,18 @@ async function reviewCountSheet(sheetId, period) {
     </div>
     ${hasData ? `<div class="count-summary">
       <div class="count-summary-row"><span>盤點品項</span><span>${counts.length} 項</span></div>
+      <div class="count-summary-row"><span>差異品項</span><span style="color:${diffCount ? 'var(--red)' : 'var(--green)'}">${diffCount} 項</span></div>
       <div class="count-summary-row count-summary-total"><span>盤存金額</span><span>$${totalValue.toLocaleString()}</span></div>
     </div>` : ''}
     ${items.map(item => {
       const c = countMap[item.id];
+      const sq = sysMap[item.id] || 0;
       const val = c ? (c.actual_qty * (item.purchase_price || 0)) : 0;
+      const diff = c ? c.actual_qty - sq : 0;
+      const diffStr = diff > 0 ? '+' + diff : '' + diff;
       return `<div class="count-item">
-        <div class="count-item-info"><div class="count-item-name">${item.name}</div><div class="count-item-sub">${item.category} · $${item.purchase_price || 0}/${item.unit}</div></div>
-        <div style="text-align:right"><div style="font-size:16px;font-weight:600">${c ? c.actual_qty : '—'}</div><div style="font-size:11px;color:var(--text3)">${c ? '$' + val.toLocaleString() : ''}</div></div>
+        <div class="count-item-info"><div class="count-item-name">${item.name}</div><div class="count-item-sub">${item.category} · $${item.purchase_price || 0}/${item.unit} · 系統：${sq}</div></div>
+        <div style="text-align:right"><div style="font-size:16px;font-weight:600">${c ? c.actual_qty : '—'}</div>${c && diff !== 0 ? `<div style="font-size:11px;color:${diff > 0 ? 'var(--green)' : 'var(--red)'}">${diffStr}</div>` : `<div style="font-size:11px;color:var(--text3)">${c ? '$' + val.toLocaleString() : ''}</div>`}</div>
       </div>`;
     }).join('')}
     ${canApprove ? `<div style="padding:16px"><button class="form-save" onclick="approveSheet('${sheetId}','${period}')">核准此盤點</button></div>` : ''}
@@ -1409,8 +1452,27 @@ async function reviewCountSheet(sheetId, period) {
 }
 
 async function approveSheet(sheetId, period) {
-  if (!confirm('確定核准此門店盤點？核准後數字將鎖定。')) return;
+  if (!confirm('確定核准此門店盤點？核准後數字將鎖定，差異將寫入庫存校正。')) return;
   try {
+    const { data: sheet } = await sb.from('count_sheets').select('store_id').eq('id', sheetId).single();
+    if (!sheet) throw new Error('找不到盤點單');
+
+    const [{ data: counts }, { data: balances }] = await Promise.all([
+      sb.from('inventory_counts').select('item_id, actual_qty').eq('store_id', sheet.store_id).eq('count_period', period),
+      sb.from('stock_balance').select('item_id, qty').eq('store_id', sheet.store_id)
+    ]);
+    const sysMap = {};
+    (balances || []).forEach(b => { sysMap[b.item_id] = parseFloat(b.qty) || 0; });
+
+    const adjustRows = [];
+    (counts || []).forEach(c => {
+      const diff = c.actual_qty - (sysMap[c.item_id] || 0);
+      if (diff !== 0) {
+        adjustRows.push({ store_id: sheet.store_id, item_id: c.item_id, change_qty: diff, type: 'adjust', reference_id: sheetId, note: `盤點校正 ${period}` });
+      }
+    });
+    if (adjustRows.length) await sb.from('stock_ledger').insert(adjustRows);
+
     const { error } = await sb.from('count_sheets').update({ status: 'approved', completed_at: new Date().toISOString() }).eq('id', sheetId);
     if (error) throw error;
     reviewCountSheet(sheetId, period);
@@ -1437,17 +1499,22 @@ async function openStoreCount(sheetId, period) {
   const el = document.getElementById('countPage');
   const items = allItems.filter(i => i.needs_count);
 
-  const { data: existing } = await sb.from('inventory_counts').select('*').eq('store_id', currentUser.store_id).eq('count_period', period);
+  const [{ data: existing }, { data: balances }] = await Promise.all([
+    sb.from('inventory_counts').select('*').eq('store_id', currentUser.store_id).eq('count_period', period),
+    sb.from('stock_balance').select('item_id, qty').eq('store_id', currentUser.store_id)
+  ]);
   const saved = {};
   (existing || []).forEach(c => { saved[c.item_id] = c; });
+  const sysQty = {};
+  (balances || []).forEach(b => { sysQty[b.item_id] = parseFloat(b.qty) || 0; });
 
-  // Mark as in_progress
   await sb.from('count_sheets').update({ status: 'in_progress' }).eq('id', sheetId).in('status', ['pending', 'in_progress']);
 
   const cats = ['ALL', ...new Set(items.map(i => i.category))];
   window._countSheetId = sheetId;
   window._countPeriod = period;
   window._countSaved = saved;
+  window._countSysQty = sysQty;
   window._countCat = 'ALL';
 
   renderStoreCount(el, items, cats);
@@ -1467,10 +1534,12 @@ function renderStoreCount(el, items, cats) {
     <div class="count-bar" style="padding:6px 16px;font-size:12px;color:var(--text3)">${filtered.length} 項品項</div>
     ${filtered.map(item => {
       const s = saved[item.id];
+      const sq = (window._countSysQty || {})[item.id] || 0;
       return `<div class="count-item">
-        <div class="count-item-info"><div class="count-item-name">${item.name}</div><div class="count-item-sub">${item.category} · ${item.unit}${item.purchase_price ? ' · $' + item.purchase_price : ''}</div></div>
-        <input type="number" class="count-input" id="ci_${item.id}" value="${s ? s.actual_qty : ''}" placeholder="0" inputmode="decimal" min="0" step="0.5">
+        <div class="count-item-info"><div class="count-item-name">${item.name}</div><div class="count-item-sub">${item.category} · ${item.unit}${item.purchase_price ? ' · $' + item.purchase_price : ''}</div><div style="font-size:11px;color:var(--purple);margin-top:2px">系統庫存：${sq} ${item.unit}</div></div>
+        <input type="number" class="count-input" id="ci_${item.id}" value="${s ? s.actual_qty : ''}" placeholder="0" inputmode="decimal" min="0" step="0.5" data-sys="${sq}" oninput="let d=document.getElementById('cd_${item.id}');if(d){let v=parseFloat(this.value)||0,diff=v-${sq};d.textContent=diff>0?'+'+diff:diff;d.style.color=diff===0?'var(--text3)':diff>0?'var(--green)':'var(--red)'}">
         <div class="count-unit">${item.unit}</div>
+        <div id="cd_${item.id}" style="font-size:11px;min-width:36px;text-align:right;color:var(--text3)">${s ? (s.actual_qty - sq > 0 ? '+' : '') + (s.actual_qty - sq) : ''}</div>
       </div>`;
     }).join('')}
     <div style="padding:16px"><button class="form-save" onclick="submitStoreCount()">送出盤點</button></div>`;
@@ -1485,14 +1554,15 @@ async function submitStoreCount() {
     if (!input) return;
     const val = parseFloat(input.value);
     if (isNaN(val)) { empty++; return; }
-    rows.push({ store_id: currentUser.store_id, item_id: item.id, count_period: window._countPeriod, system_qty: 0, actual_qty: val, counted_by: currentUser.id });
+    const sq = (window._countSysQty || {})[item.id] || 0;
+    rows.push({ store_id: currentUser.store_id, item_id: item.id, count_period: window._countPeriod, system_qty: sq, actual_qty: val, counted_by: currentUser.id });
   });
 
   if (empty > 0 && !confirm(`有 ${empty} 項未填（將視為 0），確定送出？`)) return;
-  // Fill empty as 0
   items.forEach(item => {
     if (!rows.find(r => r.item_id === item.id)) {
-      rows.push({ store_id: currentUser.store_id, item_id: item.id, count_period: window._countPeriod, system_qty: 0, actual_qty: 0, counted_by: currentUser.id });
+      const sq = (window._countSysQty || {})[item.id] || 0;
+      rows.push({ store_id: currentUser.store_id, item_id: item.id, count_period: window._countPeriod, system_qty: sq, actual_qty: 0, counted_by: currentUser.id });
     }
   });
 
@@ -1767,6 +1837,8 @@ function renderExportPage() {
       <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--accent);color:var(--accent);background:var(--surface);cursor:pointer" onclick="exportOrderDetail()">📋 各店叫貨明細</button>
       <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--purple);color:var(--purple);background:var(--surface);cursor:pointer" onclick="exportCountReport()">📦 盤點報表</button>
       <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--red);color:var(--red);background:var(--surface);cursor:pointer" onclick="exportPriceChanges()">💰 價格異動紀錄</button>
+      <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid #f59e0b;color:#f59e0b;background:var(--surface);cursor:pointer" onclick="exportStockLedger()">📒 庫存異動明細</button>
+      <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid #6366f1;color:#6366f1;background:var(--surface);cursor:pointer" onclick="exportStockSummary()">📊 進銷存彙總</button>
     </div>`;
 }
 
@@ -1948,6 +2020,111 @@ async function exportPriceChanges() {
   ws.getColumn('old').numFmt = '#,##0';
   ws.getColumn('new').numFmt = '#,##0';
   await downloadWorkbook(wb, `價格異動_${f.from}_${f.to}.xlsx`);
+}
+
+async function exportStockLedger() {
+  const f = getExpFilters();
+  let query = sb.from('stock_ledger').select('*, items:item_id(name, category, unit), stores:store_id(name)').gte('created_at', f.from + 'T00:00:00').lte('created_at', f.to + 'T23:59:59').order('created_at', { ascending: false });
+  if (f.storeId) query = query.eq('store_id', f.storeId);
+  const { data: rows } = await query;
+  if (!rows?.length) { alert('該期間無庫存異動'); return; }
+
+  const typeLabel = { receive: '收貨入庫', fulfill: '央廚出貨', adjust: '盤點校正', initial: '期初庫存' };
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('庫存異動');
+  ws.columns = [
+    { header: '日期', key: 'date', width: 12 },
+    { header: '門店', key: 'store', width: 14 },
+    { header: '品項', key: 'name', width: 18 },
+    { header: '類別', key: 'cat', width: 10 },
+    { header: '異動類型', key: 'type', width: 12 },
+    { header: '數量', key: 'qty', width: 10 },
+    { header: '單位', key: 'unit', width: 8 },
+    { header: '備註', key: 'note', width: 18 }
+  ];
+  styleHeader(ws);
+  rows.forEach(r => {
+    ws.addRow({
+      date: r.created_at?.split('T')[0] || '', store: r.stores?.name || '',
+      name: r.items?.name || '', cat: r.items?.category || '',
+      type: typeLabel[r.type] || r.type, qty: r.change_qty,
+      unit: r.items?.unit || '', note: r.note || ''
+    });
+  });
+  ws.getColumn('qty').numFmt = '#,##0.##';
+  await downloadWorkbook(wb, `庫存異動_${f.from}_${f.to}.xlsx`);
+}
+
+async function exportStockSummary() {
+  const f = getExpFilters();
+  const stores = f.storeId ? allStores.filter(s => s.id === f.storeId) : allStores.filter(s => s.is_active);
+  const items = allItems.filter(i => i.needs_count);
+
+  let lq = sb.from('stock_ledger').select('store_id, item_id, change_qty, type').gte('created_at', f.from + 'T00:00:00').lte('created_at', f.to + 'T23:59:59');
+  if (f.storeId) lq = lq.eq('store_id', f.storeId);
+  const { data: ledger } = await lq;
+  if (!ledger?.length) { alert('該期間無庫存資料'); return; }
+
+  const key = (sid, iid) => sid + '|' + iid;
+  const agg = {};
+  (ledger || []).forEach(r => {
+    const k = key(r.store_id, r.item_id);
+    if (!agg[k]) agg[k] = { store_id: r.store_id, item_id: r.item_id, receive: 0, fulfill: 0, adjust: 0 };
+    if (r.type === 'receive') agg[k].receive += parseFloat(r.change_qty) || 0;
+    else if (r.type === 'fulfill') agg[k].fulfill += parseFloat(r.change_qty) || 0;
+    else if (r.type === 'adjust') agg[k].adjust += parseFloat(r.change_qty) || 0;
+  });
+
+  let pq = sb.from('stock_ledger').select('store_id, item_id, change_qty').lt('created_at', f.from + 'T00:00:00');
+  let bq = sb.from('stock_balance').select('store_id, item_id, qty');
+  if (f.storeId) { pq = pq.eq('store_id', f.storeId); bq = bq.eq('store_id', f.storeId); }
+  const [{ data: priorLedger }, { data: balNow }] = await Promise.all([pq, bq]);
+  const before = {};
+  (priorLedger || []).forEach(r => { const k2 = key(r.store_id, r.item_id); before[k2] = (before[k2] || 0) + (parseFloat(r.change_qty) || 0); });
+  const now = {};
+  (balNow || []).forEach(r => { now[key(r.store_id, r.item_id)] = parseFloat(r.qty) || 0; });
+
+  const storeMap = {}; allStores.forEach(s => { storeMap[s.id] = s.name; });
+  const itemMap = {}; allItems.forEach(i => { itemMap[i.id] = i; });
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('進銷存彙總');
+  ws.columns = [
+    { header: '門店', key: 'store', width: 14 },
+    { header: '品項', key: 'name', width: 18 },
+    { header: '類別', key: 'cat', width: 10 },
+    { header: '單位', key: 'unit', width: 8 },
+    { header: '期初庫存', key: 'opening', width: 10 },
+    { header: '收貨入庫', key: 'receive', width: 10 },
+    { header: '央廚出貨', key: 'fulfill', width: 10 },
+    { header: '盤點校正', key: 'adjust', width: 10 },
+    { header: '期末庫存', key: 'closing', width: 10 },
+    { header: '單價', key: 'price', width: 10 },
+    { header: '期末金額', key: 'value', width: 12 }
+  ];
+  styleHeader(ws);
+
+  const sortedKeys = Object.keys(agg).sort((a, b) => {
+    const [sa] = a.split('|'), [sb2] = b.split('|');
+    return (storeMap[sa] || '').localeCompare(storeMap[sb2] || '');
+  });
+  sortedKeys.forEach(k => {
+    const r = agg[k];
+    const item = itemMap[r.item_id];
+    if (!item) return;
+    const opening = before[k] || 0;
+    const closing = now[k] || 0;
+    ws.addRow({
+      store: storeMap[r.store_id] || '', name: item.name, cat: item.category || '',
+      unit: item.unit || '', opening, receive: r.receive, fulfill: r.fulfill,
+      adjust: r.adjust, closing, price: item.purchase_price || 0,
+      value: closing * (item.purchase_price || 0)
+    });
+  });
+  ['opening', 'receive', 'fulfill', 'adjust', 'closing'].forEach(c => { ws.getColumn(c).numFmt = '#,##0.##'; });
+  ws.getColumn('price').numFmt = '#,##0';
+  ws.getColumn('value').numFmt = '#,##0';
+  await downloadWorkbook(wb, `進銷存彙總_${f.from}_${f.to}.xlsx`);
 }
 
 // ══════════ CONFIG (配送設定) ══════════

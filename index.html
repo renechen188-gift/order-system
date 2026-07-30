@@ -113,7 +113,10 @@
   .btn-green{background:var(--green);color:#fff}.btn-green:active{background:#245e44}
   .btn-purple{background:var(--purple);color:#fff}
 
-  .rcv-row{padding:12px 14px;border-bottom:1px solid var(--border);background:var(--surface)}
+  .rcv-row{padding:12px 14px;border-bottom:1px solid var(--border);background:var(--surface);transition:opacity .3s}
+  .rcv-row.done{opacity:.4;pointer-events:none}
+  .rcv-item-btn{width:32px;height:32px;border-radius:8px;border:1.5px solid var(--green);background:var(--surface);color:var(--green);font-size:16px;font-weight:700;cursor:pointer;flex-shrink:0}
+  .rcv-item-btn:disabled{background:var(--green);color:#fff;border-color:var(--green)}
   .rcv-top{display:flex;align-items:center;gap:10px;margin-bottom:4px}
   .rcv-name{flex:1;font-size:14px;font-weight:500}
   .rcv-bottom{display:flex;align-items:center;gap:8px;margin-top:4px}
@@ -651,7 +654,7 @@ async function loadReceive() {
         const isExternal = allSuppliers.find(s => s.id === oi.supplier_id)?.type !== 'central_kitchen';
         const sysPrice = item?.purchase_price;
         const hasSys = sysPrice != null;
-        html += `<div class="rcv-row"><div class="rcv-top"><div class="rcv-name">${item?.name || ''}</div><div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;color:var(--text3)">叫${oi.ordered_qty}</span><input type="number" class="cr-input" value="${oi.ordered_qty}" inputmode="decimal" data-exp="${oi.ordered_qty}" data-oiid="${oi.id}" onfocus="this.select()" oninput="this.classList.toggle('short',parseFloat(this.value)<parseFloat(this.dataset.exp))"><span style="font-size:12px;color:var(--text3)">${item?.unit || ''}</span></div></div>`;
+        html += `<div class="rcv-row" id="rcv_${oi.id}"><div class="rcv-top"><div class="rcv-name">${item?.name || ''}</div><div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;color:var(--text3)">叫${oi.ordered_qty}</span><input type="number" class="cr-input" value="${oi.ordered_qty}" inputmode="decimal" data-exp="${oi.ordered_qty}" data-oiid="${oi.id}" data-itemid="${item?.id || ''}" onfocus="this.select()" oninput="this.classList.toggle('short',parseFloat(this.value)<parseFloat(this.dataset.exp))"><span style="font-size:12px;color:var(--text3)">${item?.unit || ''}</span><button class="rcv-item-btn" onclick="confirmOneItem(this,'${oi.id}','${order.id}')">✓</button></div></div>`;
         if (isExternal) html += `<div class="rcv-bottom"><span class="rcv-price-sys">${hasSys ? '系統價 $' + sysPrice : '系統價 未設定'}</span><span class="rcv-price-sys">→ 送貨價</span><input type="number" class="rcv-price-input" value="${hasSys ? sysPrice : ''}" placeholder="填入" inputmode="decimal" data-sys="${hasSys ? sysPrice : ''}" data-itemid="${item?.id || ''}" onfocus="this.select()" oninput="let s=this.dataset.sys,c=this.value;this.classList.toggle('changed',s!==''&&c!==s);let a=this.parentElement.querySelector('.rcv-alert');if(a)a.classList.toggle('show',s!==''&&c!==s)"><span class="rcv-alert">⚠️ 價差</span></div>`;
         html += '</div>';
       });
@@ -659,6 +662,50 @@ async function loadReceive() {
     }
   });
   el.innerHTML = html;
+}
+
+async function confirmOneItem(btn, oiId, orderId) {
+  btn.disabled = true;
+  const row = document.getElementById('rcv_' + oiId);
+  const inp = row.querySelector('.cr-input');
+  const rq = parseFloat(inp.value) || 0;
+  try {
+    await sb.from('order_items').update({ received_qty: rq, status: rq < parseFloat(inp.dataset.exp) ? 'short' : 'received', received_by: currentUser.id, received_at: new Date().toISOString() }).eq('id', oiId);
+    const priceInp = row.querySelector('.rcv-price-input');
+    if (priceInp) {
+      const sysStr = priceInp.dataset.sys;
+      const nw = parseFloat(priceInp.value) || 0;
+      const itemId = priceInp.dataset.itemid;
+      if (itemId && nw) {
+        if (sysStr === '' || sysStr === 'null') {
+          await sb.from('items').update({ purchase_price: nw }).eq('id', itemId);
+        } else {
+          const sys = parseFloat(sysStr);
+          if (nw !== sys) {
+            const maps = itemSupplierMap[itemId] || [];
+            await sb.from('price_reviews').insert({ item_id: itemId, supplier_id: maps[0]?.supplier_id, store_id: currentUser.store_id, reported_by: currentUser.id, old_price: sys, new_price: nw, status: 'pending' });
+          }
+        }
+      }
+    }
+    if (rq > 0) {
+      const itemId = inp.dataset.itemid;
+      const { data: order } = await sb.from('orders').select('store_id').eq('id', orderId).single();
+      if (order && itemId) {
+        await sb.from('stock_ledger').insert({ store_id: order.store_id, item_id: itemId, change_qty: rq, type: 'receive', reference_id: orderId, note: '收貨入庫' });
+      }
+    }
+    row.classList.add('done');
+    const card = row.closest('.card');
+    const remaining = card.querySelectorAll('.rcv-row:not(.done)');
+    if (!remaining.length) {
+      await sb.from('orders').update({ status: 'received', updated_at: new Date().toISOString() }).eq('id', orderId);
+      card.querySelector('.card-status').textContent = '已確認';
+      card.querySelector('.card-status').className = 'card-status status-done';
+      const allBtn = card.querySelector('.card-actions .btn-green');
+      if (allBtn) { allBtn.textContent = '已確認 ✓'; allBtn.disabled = true; allBtn.style.background = 'var(--surface2)'; allBtn.style.color = 'var(--green)'; }
+    }
+  } catch (err) { alert('確認失敗：' + err.message); btn.disabled = false; }
 }
 
 async function confirmReceive(btn, orderId) {

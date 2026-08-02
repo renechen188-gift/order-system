@@ -1078,12 +1078,13 @@ async function showOrderDetail(orderId) {
             const item = oi.items;
             const received = oi.received_qty != null;
             const isShort = received && oi.received_qty < oi.ordered_qty;
-            return `<div style="display:flex;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);gap:8px">
+            return `<div id="oi_${oi.id}" style="display:flex;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);gap:8px">
               <div style="flex:1;font-size:14px;font-weight:500">${item?.name || ''}</div>
               <div style="display:flex;align-items:center;gap:6px;font-size:13px">
                 ${canEdit ? `<input type="number" class="edit-qty-input" data-oiid="${oi.id}" value="${oi.ordered_qty}" inputmode="decimal" style="width:50px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-weight:600;text-align:center;font-family:inherit" onfocus="this.select()">` : `<span style="color:var(--text2)">叫 ${oi.ordered_qty}</span>`}
                 <span style="color:var(--text3)">${item?.unit || ''}</span>
                 ${received ? `<span style="margin-left:4px;color:${isShort ? 'var(--red)' : 'var(--green)'};font-weight:600">收 ${oi.received_qty}</span>` : ''}
+                ${canEdit && !received ? `<button onclick="deleteOrderItem('${oi.id}','${order.id}')" style="width:24px;height:24px;border:none;background:none;color:var(--red);font-size:16px;cursor:pointer;padding:0">✕</button>` : ''}
               </div>
             </div>`;
           }).join('')}
@@ -1109,6 +1110,24 @@ async function copyOrder(orderId) {
   switchTab('order');
   renderItems();
   alert(`已載入 ${order.order_items.length} 項品項到叫貨單，可調整後送出`);
+}
+
+async function deleteOrderItem(oiId, orderId) {
+  if (!confirm('確定刪除此品項？')) return;
+  const { error } = await sb.from('order_items').delete().eq('id', oiId);
+  if (error) { alert('刪除失敗：' + error.message); return; }
+  const row = document.getElementById('oi_' + oiId);
+  if (row) row.remove();
+  const { data: remaining } = await sb.from('order_items').select('id', { count: 'exact', head: true }).eq('order_id', orderId);
+  if (remaining === 0) {
+    await sb.from('orders').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', orderId);
+    document.getElementById('formOverlay')?.remove();
+    showModal('🗑️', '訂單已自動取消', '所有品項已刪除');
+  }
+  if (currentTab === 'history') loadHistory();
+  if (currentTab === 'receive') loadReceive();
+  if (currentTab === 'summary') loadSummary();
+  if (currentTab === 'kitchenSummary') loadKitchenSummary();
 }
 
 async function saveOrderEdits(orderId) {

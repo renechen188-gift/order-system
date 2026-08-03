@@ -676,29 +676,31 @@ async function loadReceiveOverview() {
   const today = getToday();
   const { data: orders } = await sb.from('orders').select('id, store_id, status, order_date, order_type, stores(name), order_items(id, status)').gte('order_date', today.slice(0, 8) + '01').order('order_date', { ascending: false });
 
-  const storeStats = {};
+  const storeGroups = {};
   (orders || []).forEach(o => {
     const sn = o.stores?.name || '未知';
-    if (!storeStats[sn]) storeStats[sn] = { total: 0, received: 0, pending: 0, partial: 0 };
-    storeStats[sn].total++;
+    const sid = o.store_id;
+    if (!storeGroups[sn]) storeGroups[sn] = { storeId: sid, total: 0, received: 0, pending: 0, partial: 0 };
+    storeGroups[sn].total++;
     const items = o.order_items || [];
     const allDone = items.length > 0 && items.every(i => i.status === 'received');
     const someDone = items.some(i => i.status === 'received' || i.status === 'short');
-    if (o.status === 'received' || allDone) storeStats[sn].received++;
-    else if (someDone) storeStats[sn].partial++;
-    else storeStats[sn].pending++;
+    if (o.status === 'received' || allDone) storeGroups[sn].received++;
+    else if (someDone) storeGroups[sn].partial++;
+    else storeGroups[sn].pending++;
   });
 
   let html = '<div class="section-bar">各店收貨狀態（本月）</div>';
-  if (!Object.keys(storeStats).length) {
+  if (!Object.keys(storeGroups).length) {
     html += '<div class="empty-state"><div class="icon">📦</div><div class="msg">本月尚無訂單</div></div>';
   } else {
-    for (const [store, s] of Object.entries(storeStats)) {
+    for (const [store, s] of Object.entries(storeGroups)) {
       const isCool = store.startsWith('涼三伯');
       const color = isCool ? '#3b82f6' : '#ef4444';
-      html += `<div class="card" style="margin:8px 16px;border-left:3px solid ${color}">
+      const hasPending = s.pending > 0 || s.partial > 0;
+      html += `<div class="card" style="margin:8px 16px;border-left:3px solid ${color};cursor:pointer" onclick="toggleStoreReceiveDetail(this,'${s.storeId}','${store}')">
         <div style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
-          <div><div style="font-size:15px;font-weight:700">${store}</div><div style="font-size:12px;color:var(--text3);margin-top:2px">${s.total} 筆訂單</div></div>
+          <div><div style="font-size:15px;font-weight:700">${store}</div><div style="font-size:12px;color:var(--text3);margin-top:2px">${s.total} 筆訂單${hasPending ? ' · 點擊查看' : ''}</div></div>
           <div style="display:flex;gap:10px;font-size:13px;font-weight:600">
             ${s.pending ? `<span style="color:var(--red)">⏳ 待收 ${s.pending}</span>` : ''}
             ${s.partial ? `<span style="color:#f59e0b">⚡ 部分 ${s.partial}</span>` : ''}
@@ -709,6 +711,43 @@ async function loadReceiveOverview() {
     }
   }
   el.innerHTML = html;
+}
+
+async function toggleStoreReceiveDetail(cardEl, storeId, storeName) {
+  const existing = cardEl.nextElementSibling;
+  if (existing?.classList?.contains('store-rcv-detail')) { existing.remove(); return; }
+  const detail = document.createElement('div');
+  detail.className = 'store-rcv-detail';
+  detail.style.cssText = 'margin:0 16px 10px;border:1px solid var(--border);border-radius:0 0 12px 12px;border-top:none;background:var(--surface)';
+  detail.innerHTML = '<div class="loading" style="padding:12px">載入中…</div>';
+  cardEl.after(detail);
+
+  const { data: orders } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('store_id', storeId).in('status', ['submitted', 'confirmed']).order('order_date', { ascending: false });
+  if (!orders?.length) {
+    detail.innerHTML = '<div style="padding:14px 16px;font-size:13px;color:var(--text3);text-align:center">此門店目前無待收貨訂單</div>';
+    return;
+  }
+
+  let html = '';
+  orders.forEach(order => {
+    const supGroups = {};
+    (order.order_items || []).filter(oi => oi.status !== 'received').forEach(oi => {
+      const sn = getSupplierName(oi.supplier_id) || '未指定';
+      if (!supGroups[sn]) supGroups[sn] = []; supGroups[sn].push(oi);
+    });
+    if (!Object.keys(supGroups).length) return;
+    for (const [supName, items] of Object.entries(supGroups)) {
+      html += `<div style="border-top:1px solid var(--border);padding:10px 14px 4px"><div style="font-size:13px;font-weight:600;color:var(--accent)">${supName}</div><div style="font-size:11px;color:var(--text3)">${order.order_date}</div></div>`;
+      items.forEach(oi => {
+        const item = oi.items;
+        const prevRcv = oi.received_qty || 0;
+        const remain = oi.ordered_qty - prevRcv;
+        const shortLabel = prevRcv > 0 ? ` <span style="font-size:11px;color:var(--red)">(已收${prevRcv}／待${remain})</span>` : '';
+        html += `<div class="rcv-row" id="rcv_${oi.id}" style="padding:8px 14px"><div class="rcv-top"><div class="rcv-name" style="font-size:13px">${item?.name || ''}${shortLabel}</div><div style="display:flex;align-items:center;gap:4px"><span style="font-size:11px;color:var(--text3)">${prevRcv > 0 ? '待' + remain : '叫' + oi.ordered_qty}</span><input type="number" class="cr-input" value="${remain}" inputmode="decimal" data-exp="${remain}" data-oiid="${oi.id}" data-itemid="${item?.id || ''}" data-prev="${prevRcv}" data-ordered="${oi.ordered_qty}" onfocus="this.select()" style="width:50px;height:28px;font-size:13px"><span style="font-size:11px;color:var(--text3)">${item?.unit || ''}</span><button class="rcv-item-btn" onclick="confirmOneItem(this,'${oi.id}','${order.id}')" style="width:28px;height:28px;font-size:12px">✓</button></div></div></div>`;
+      });
+    }
+  });
+  detail.innerHTML = html || '<div style="padding:14px 16px;font-size:13px;color:var(--text3);text-align:center">所有品項已收完</div>';
 }
 
 async function confirmOneItem(btn, oiId, orderId) {
@@ -1627,13 +1666,52 @@ async function approveSheet(sheetId, period) {
   } catch (err) { alert('核准失敗：' + (err.message || err)); }
 }
 
-async function returnSheet(sheetId, period) {
-  if (!confirm('確定退回此盤點？門店將需要重新修改後送出。')) return;
+function enterReturnMode(sheetId, period) {
+  const items = document.querySelectorAll('.count-item');
+  if (!items.length) return;
+  items.forEach(el => {
+    const nameEl = el.querySelector('.count-item-name');
+    if (!nameEl) return;
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'return-flag-cb';
+    cb.style.cssText = 'width:18px;height:18px;margin-right:8px;accent-color:var(--red);flex-shrink:0';
+    el.style.cursor = 'pointer';
+    el.insertBefore(cb, el.firstChild);
+    el.onclick = (e) => { if (e.target !== cb) cb.checked = !cb.checked; };
+  });
+  const btnArea = document.querySelector('#countPage .form-save')?.parentElement;
+  if (btnArea) {
+    btnArea.innerHTML = `
+      <div style="margin-bottom:10px;font-size:13px;color:var(--red);font-weight:600;text-align:center">勾選有問題的品項，門店會看到標記</div>
+      <textarea id="returnNote" placeholder="退回原因（選填）" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:14px;font-family:inherit;resize:none;height:50px;margin-bottom:10px"></textarea>
+      <div style="display:flex;gap:10px">
+        <button style="flex:1;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--border);color:var(--text2);background:transparent;cursor:pointer" onclick="reviewCountSheet('${sheetId}','${period}')">取消</button>
+        <button class="form-save" style="flex:1;background:var(--red)" onclick="confirmReturn('${sheetId}','${period}')">確認退回</button>
+      </div>`;
+  }
+}
+
+async function confirmReturn(sheetId, period) {
+  const flagged = [];
+  document.querySelectorAll('.return-flag-cb:checked').forEach(cb => {
+    const nameEl = cb.parentElement.querySelector('.count-item-name');
+    if (nameEl) flagged.push(nameEl.textContent.trim());
+  });
+  const note = document.getElementById('returnNote')?.value?.trim() || '';
+  const returnNotes = (flagged.length ? '問題品項：' + flagged.join('、') : '') + (note ? (flagged.length ? '\n' : '') + note : '');
+
   try {
-    const { error } = await sb.from('count_sheets').update({ status: 'in_progress', completed_at: null }).eq('id', sheetId);
+    const updateData = { status: 'in_progress', completed_at: null };
+    if (returnNotes) updateData.return_notes = returnNotes;
+    const { error } = await sb.from('count_sheets').update(updateData).eq('id', sheetId);
     if (error) throw error;
     viewCountPeriod(period);
   } catch (err) { alert('退回失敗：' + (err.message || err)); }
+}
+
+async function returnSheet(sheetId, period) {
+  enterReturnMode(sheetId, period);
 }
 
 // ── Store: 門店盤點 ──
@@ -1646,7 +1724,7 @@ async function loadCountStore() {
     ${(sheets || []).map(s => `<div class="count-period" onclick="${s.status === 'approved' ? `viewStoreCountReadonly('${s.id}','${s.period}')` : `openStoreCount('${s.id}','${s.period}')`}">
       <div class="count-period-info">
         <div class="count-period-title">${formatPeriod(s.period)}</div>
-        <div class="count-period-sub">${s.status === 'pending' ? '尚未盤點，點此開始' : s.status === 'in_progress' ? '盤點中，點此繼續' : s.status === 'completed' ? '已送出，等待審核' : '已核准'}</div>
+        <div class="count-period-sub">${s.status === 'pending' ? '尚未盤點，點此開始' : s.status === 'in_progress' ? (s.return_notes ? '⚠️ 已退回，請修改後重新送出' : '盤點中，點此繼續') : s.status === 'completed' ? '已送出，等待審核' : '已核准'}</div>
       </div>
       <span class="count-status ${s.status}">${COUNT_STATUS_LABEL[s.status]}</span>
     </div>`).join('') || '<div class="empty-state"><div class="icon">📋</div><div class="msg">目前沒有盤點任務</div></div>'}`;
@@ -1656,9 +1734,10 @@ async function openStoreCount(sheetId, period) {
   const el = document.getElementById('countPage');
   const items = allItems.filter(i => i.needs_count);
 
-  const [{ data: existing }, { data: balances }] = await Promise.all([
+  const [{ data: existing }, { data: balances }, { data: sheet }] = await Promise.all([
     sb.from('inventory_counts').select('*').eq('store_id', currentUser.store_id).eq('count_period', period),
-    sb.from('stock_balance').select('item_id, qty').eq('store_id', currentUser.store_id)
+    sb.from('stock_balance').select('item_id, qty').eq('store_id', currentUser.store_id),
+    sb.from('count_sheets').select('return_notes').eq('id', sheetId).single()
   ]);
   const saved = {};
   (existing || []).forEach(c => { saved[c.item_id] = c; });
@@ -1673,6 +1752,7 @@ async function openStoreCount(sheetId, period) {
   window._countSaved = saved;
   window._countSysQty = sysQty;
   window._countCat = 'ALL';
+  window._countReturnNotes = sheet?.return_notes || '';
 
   renderStoreCount(el, items, cats);
 }
@@ -1681,19 +1761,27 @@ function renderStoreCount(el, items, cats) {
   const saved = window._countSaved;
   const cat = window._countCat;
   const filtered = cat === 'ALL' ? items : items.filter(i => i.category === cat);
+  const rn = window._countReturnNotes || '';
+  const flaggedNames = [];
+  if (rn) {
+    const m = rn.match(/問題品項：(.+)/);
+    if (m) m[1].split('、').forEach(n => flaggedNames.push(n.trim()));
+  }
 
   el.innerHTML = `
     <div class="config-section">
       <div style="display:flex;align-items:center;gap:8px"><button style="background:none;border:none;font-size:18px;cursor:pointer" onclick="loadCountStore()">←</button><div class="config-section-title">${formatPeriod(window._countPeriod)}</div></div>
       <div class="config-section-sub">填寫各品項實際庫存數量</div>
     </div>
+    ${rn ? `<div style="margin:8px 16px;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px"><div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:4px">退回重盤</div><div style="font-size:12px;color:#991b1b;white-space:pre-line">${rn}</div></div>` : ''}
     <div class="cat-filter" style="padding:10px 16px">${cats.map(c => `<button class="cat-btn ${cat === c ? 'active' : ''}" onclick="window._countCat='${c}';renderStoreCount(document.getElementById('countPage'),allItems.filter(i=>i.needs_count),${JSON.stringify(cats).replace(/"/g, "'")})">${c === 'ALL' ? '全部' : c}</button>`).join('')}</div>
     <div class="count-bar" style="padding:6px 16px;font-size:12px;color:var(--text3)">${filtered.length} 項品項</div>
     ${filtered.map(item => {
       const s = saved[item.id];
       const sq = (window._countSysQty || {})[item.id] || 0;
-      return `<div class="count-item">
-        <div class="count-item-info"><div class="count-item-name">${item.name}</div><div class="count-item-sub">${item.category} · ${item.unit}${item.purchase_price ? ' · $' + item.purchase_price : ''}</div><div style="font-size:11px;color:var(--purple);margin-top:2px">系統庫存：${sq} ${item.unit}</div></div>
+      const isFlagged = flaggedNames.includes(item.name);
+      return `<div class="count-item" style="${isFlagged ? 'background:#fef2f2;border-left:3px solid var(--red)' : ''}">
+        <div class="count-item-info"><div class="count-item-name">${isFlagged ? '⚠️ ' : ''}${item.name}</div><div class="count-item-sub">${item.category} · ${item.unit}${item.purchase_price ? ' · $' + item.purchase_price : ''}</div><div style="font-size:11px;color:var(--purple);margin-top:2px">系統庫存：${sq} ${item.unit}</div></div>
         <input type="number" class="count-input" id="ci_${item.id}" value="${s ? s.actual_qty : ''}" placeholder="0" inputmode="decimal" min="0" step="0.5" data-sys="${sq}" oninput="let d=document.getElementById('cd_${item.id}');if(d){let v=parseFloat(this.value)||0,diff=v-${sq};d.textContent=diff>0?'+'+diff:diff;d.style.color=diff===0?'var(--text3)':diff>0?'var(--green)':'var(--red)'}">
         <div class="count-unit">${item.unit}</div>
         <div id="cd_${item.id}" style="font-size:11px;min-width:36px;text-align:right;color:var(--text3)">${s ? (s.actual_qty - sq > 0 ? '+' : '') + (s.actual_qty - sq) : ''}</div>
@@ -1729,7 +1817,7 @@ async function submitStoreCount() {
     const { error } = await sb.from('inventory_counts').insert(rows);
     if (error) throw error;
 
-    await sb.from('count_sheets').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', window._countSheetId);
+    await sb.from('count_sheets').update({ status: 'completed', completed_at: new Date().toISOString(), return_notes: null }).eq('id', window._countSheetId);
     alert('盤點已送出！');
     loadCountStore();
   } catch (err) { alert('送出失敗：' + (err.message || err)); }
@@ -2208,8 +2296,18 @@ async function loadStock() {
   });
 
   const storeName = getStoreName(storeId);
-  let html = `<div class="section-bar">庫存查詢</div>${picker}<div style="padding:8px 16px;font-size:13px;color:var(--text3)">${storeName} · ${items.length} 項品項</div>`;
-  for (const [cat, citems] of Object.entries(cats)) {
+  const showAll = window._stockShowAll || false;
+  const hasStock = items.filter(i => (balMap[i.id] || 0) !== 0);
+  const displayItems = showAll ? items : hasStock;
+  const displayCats = {};
+  displayItems.forEach(i => {
+    const cat = i.category || '其他';
+    if (!displayCats[cat]) displayCats[cat] = [];
+    displayCats[cat].push(i);
+  });
+
+  let html = `<div class="section-bar">庫存查詢</div>${picker}<div style="padding:8px 16px;display:flex;align-items:center;justify-content:space-between"><span style="font-size:13px;color:var(--text3)">${storeName} · ${displayItems.length} 項品項${!showAll && hasStock.length < items.length ? '（有庫存）' : ''}</span><label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" ${showAll ? 'checked' : ''} onchange="window._stockShowAll=this.checked;loadStock()"> 顯示全部</label></div>`;
+  for (const [cat, citems] of Object.entries(displayCats)) {
     html += `<div style="padding:6px 16px 2px;font-size:12px;font-weight:700;color:var(--text3);letter-spacing:1px">${cat}</div>`;
     citems.forEach(item => {
       const qty = balMap[item.id] || 0;

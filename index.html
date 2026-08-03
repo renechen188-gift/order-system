@@ -318,6 +318,7 @@
   <div id="summaryPage" class="page"></div>
   <div id="kitchenSummaryPage" class="page"></div>
   <div id="pricePage" class="page"></div>
+  <div id="stockPage" class="page"></div>
   <div id="fulfillPage" class="page"></div>
   <div id="itemsPage" class="page"></div>
   <div id="configPage" class="page"></div>
@@ -418,11 +419,11 @@ async function initApp() {
 function buildTabs() {
   const tabs = [];
   if (currentUser.role === 'admin') {
-    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'export', label: '匯出' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
+    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'export', label: '匯出' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
   } else if (currentUser.role === 'ops') {
     tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' });
   } else if (currentUser.role === 'kitchen') {
-    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
+    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
   } else {
     tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
   }
@@ -466,7 +467,7 @@ async function loadData() {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('#mainTabs .view-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer', 'export'].forEach(id => {
+  ['order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'stock', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer', 'export'].forEach(id => {
     const el = document.getElementById(id + 'Page');
     if (el) el.classList.toggle('active', id === tab);
   });
@@ -483,6 +484,7 @@ function switchTab(tab) {
   if (tab === 'suppliers') loadSuppliers();
   if (tab === 'config') loadConfig();
   if (tab === 'export') renderExportPage();
+  if (tab === 'stock') loadStock();
 }
 
 function getToday() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
@@ -633,6 +635,7 @@ function closeModal() { document.getElementById('modal').classList.remove('show'
 
 // ══════════ RECEIVE ══════════
 async function loadReceive() {
+  if (currentUser.role === 'admin') return loadReceiveOverview();
   const el = document.getElementById('receivePage');
   el.innerHTML = '<div class="section-bar">待收貨訂單</div><div class="loading">載入中…</div>';
   let query = sb.from('orders').select('*, order_items(*, items(*)), stores(*)').in('status', ['submitted', 'confirmed']).order('order_date', { ascending: false });
@@ -664,6 +667,47 @@ async function loadReceive() {
       html += `<div class="card-actions"><button class="card-btn btn-green" onclick="confirmReceive(this,'${order.id}')">一鍵全部確認收貨</button></div></div>`;
     }
   });
+  el.innerHTML = html;
+}
+
+async function loadReceiveOverview() {
+  const el = document.getElementById('receivePage');
+  el.innerHTML = '<div class="section-bar">各店收貨狀態</div><div class="loading">載入中…</div>';
+  const today = getToday();
+  const { data: orders } = await sb.from('orders').select('id, store_id, status, order_date, order_type, stores(name), order_items(id, status)').gte('order_date', today.slice(0, 8) + '01').order('order_date', { ascending: false });
+
+  const storeStats = {};
+  (orders || []).forEach(o => {
+    const sn = o.stores?.name || '未知';
+    if (!storeStats[sn]) storeStats[sn] = { total: 0, received: 0, pending: 0, partial: 0 };
+    storeStats[sn].total++;
+    const items = o.order_items || [];
+    const allDone = items.length > 0 && items.every(i => i.status === 'received');
+    const someDone = items.some(i => i.status === 'received' || i.status === 'short');
+    if (o.status === 'received' || allDone) storeStats[sn].received++;
+    else if (someDone) storeStats[sn].partial++;
+    else storeStats[sn].pending++;
+  });
+
+  let html = '<div class="section-bar">各店收貨狀態（本月）</div>';
+  if (!Object.keys(storeStats).length) {
+    html += '<div class="empty-state"><div class="icon">📦</div><div class="msg">本月尚無訂單</div></div>';
+  } else {
+    for (const [store, s] of Object.entries(storeStats)) {
+      const isCool = store.startsWith('涼三伯');
+      const color = isCool ? '#3b82f6' : '#ef4444';
+      html += `<div class="card" style="margin:8px 16px;border-left:3px solid ${color}">
+        <div style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
+          <div><div style="font-size:15px;font-weight:700">${store}</div><div style="font-size:12px;color:var(--text3);margin-top:2px">${s.total} 筆訂單</div></div>
+          <div style="display:flex;gap:10px;font-size:13px;font-weight:600">
+            ${s.pending ? `<span style="color:var(--red)">⏳ 待收 ${s.pending}</span>` : ''}
+            ${s.partial ? `<span style="color:#f59e0b">⚡ 部分 ${s.partial}</span>` : ''}
+            <span style="color:var(--green)">✓ 已收 ${s.received}</span>
+          </div>
+        </div>
+      </div>`;
+    }
+  }
   el.innerHTML = html;
 }
 
@@ -767,17 +811,32 @@ async function confirmReceive(btn, orderId) {
 }
 
 // ══════════ HISTORY ══════════
+const histFilter = { month: '', storeId: '', type: '' };
 async function loadHistory() {
   const el = document.getElementById('historyPage');
-  el.innerHTML = '<div class="section-bar">叫貨紀錄</div><div class="loading">載入中…</div>';
-  let query = sb.from('orders').select('*, stores(*), order_items(count)').order('order_date', { ascending: false }).limit(30);
-  if (currentUser.store_id) query = query.eq('store_id', currentUser.store_id);
+  const isAdmin = currentUser.role === 'admin' || currentUser.role === 'ops';
+  const today = getToday();
+  if (!histFilter.month) histFilter.month = today.slice(0, 7);
+
+  const storeOpts = allStores.filter(s => s.is_active).map(s => `<option value="${s.id}" ${histFilter.storeId === s.id ? 'selected' : ''}>${s.name}</option>`).join('');
+  const filterHtml = `<div style="padding:10px 16px;display:flex;gap:8px;flex-wrap:wrap">
+    <input type="month" value="${histFilter.month}" style="padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit" onchange="histFilter.month=this.value;loadHistory()">
+    ${isAdmin ? `<select style="padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit" onchange="histFilter.storeId=this.value;loadHistory()"><option value="">全部門店</option>${storeOpts}</select>` : ''}
+    <select style="padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit" onchange="histFilter.type=this.value;loadHistory()"><option value="" ${histFilter.type === '' ? 'selected' : ''}>全部類型</option><option value="external" ${histFilter.type === 'external' ? 'selected' : ''}>外部廠商</option><option value="internal" ${histFilter.type === 'internal' ? 'selected' : ''}>央廚</option></select>
+  </div>`;
+
+  el.innerHTML = '<div class="section-bar">叫貨紀錄</div>' + filterHtml + '<div class="loading">載入中…</div>';
+
+  let query = sb.from('orders').select('*, stores(*), order_items(count)').order('order_date', { ascending: false }).gte('order_date', histFilter.month + '-01').lte('order_date', histFilter.month + '-31').limit(100);
+  if (currentUser.store_id && !isAdmin) query = query.eq('store_id', currentUser.store_id);
+  if (histFilter.storeId) query = query.eq('store_id', histFilter.storeId);
+  if (histFilter.type) query = query.eq('order_type', histFilter.type);
   const { data: orders } = await query;
-  if (!orders?.length) { el.innerHTML = '<div class="section-bar">叫貨紀錄</div><div class="empty-state"><div class="icon">📋</div><div class="msg">尚無叫貨紀錄</div></div>'; return; }
+
   const sm = { draft:'草稿', submitted:'已送出', confirmed:'已確認', received:'已收貨', cancelled:'已取消' };
-  el.innerHTML = '<div class="section-bar">叫貨紀錄</div>' + orders.map(o =>
+  el.innerHTML = '<div class="section-bar">叫貨紀錄</div>' + filterHtml + (orders?.length ? orders.map(o =>
     `<div class="history-item" onclick="showOrderDetail('${o.id}')" style="cursor:pointer"><div class="hi-top"><span class="hi-date">${o.order_date}</span><span class="hi-status ${o.status === 'received' ? 'status-done' : 'status-pending'}">${sm[o.status] || o.status}</span></div><div class="hi-detail">${o.order_type === 'internal' ? '🏭 央廚' : '🏪 外部廠商'} · ${o.order_items?.[0]?.count || 0} 項${o.stores ? ' · ' + o.stores.name : ''}<span style="float:right;color:var(--text3)">›</span></div></div>`
-  ).join('');
+  ).join('') : '<div class="empty-state"><div class="icon">📋</div><div class="msg">此月份無叫貨紀錄</div></div>');
 }
 
 // ══════════ SUPPLIER SUMMARY (Admin) ══════════
@@ -1521,10 +1580,13 @@ async function reviewCountSheet(sheetId, period) {
       const diffStr = diff > 0 ? '+' + diff : '' + diff;
       return `<div class="count-item">
         <div class="count-item-info"><div class="count-item-name">${item.name}</div><div class="count-item-sub">${item.category} · $${item.purchase_price || 0}/${item.unit} · 系統：${sq}</div></div>
-        <div style="text-align:right"><div style="font-size:16px;font-weight:600">${c ? c.actual_qty : '—'}</div>${c && diff !== 0 ? `<div style="font-size:11px;color:${diff > 0 ? 'var(--green)' : 'var(--red)'}">${diffStr}</div>` : `<div style="font-size:11px;color:var(--text3)">${c ? '$' + val.toLocaleString() : ''}</div>`}</div>
+        <div style="text-align:right">${canApprove ? `<input type="number" class="admin-count-input" data-itemid="${item.id}" value="${c ? c.actual_qty : 0}" inputmode="decimal" min="0" step="0.5" style="width:60px;height:32px;border:1px solid var(--border);border-radius:6px;text-align:center;font-size:15px;font-weight:600;font-family:inherit">` : `<div style="font-size:16px;font-weight:600">${c ? c.actual_qty : '—'}</div>`}${c && diff !== 0 ? `<div style="font-size:11px;color:${diff > 0 ? 'var(--green)' : 'var(--red)'}">${diffStr}</div>` : `<div style="font-size:11px;color:var(--text3)">${c ? '$' + val.toLocaleString() : ''}</div>`}</div>
       </div>`;
     }).join('')}
-    ${canApprove ? `<div style="padding:16px"><button class="form-save" onclick="approveSheet('${sheetId}','${period}')">核准此盤點</button></div>` : ''}
+    ${canApprove ? `<div style="padding:16px;display:flex;gap:10px">
+      <button class="form-save" style="flex:1" onclick="approveSheet('${sheetId}','${period}')">核准此盤點</button>
+      <button style="flex:1;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--red);color:var(--red);background:transparent;cursor:pointer" onclick="returnSheet('${sheetId}','${period}')">退回重盤</button>
+    </div>` : ''}
     ${sheet.status === 'approved' ? '<div style="padding:16px;text-align:center;color:var(--green);font-weight:600">✓ 已核准</div>' : ''}`;
 }
 
@@ -1533,6 +1595,15 @@ async function approveSheet(sheetId, period) {
   try {
     const { data: sheet } = await sb.from('count_sheets').select('store_id').eq('id', sheetId).single();
     if (!sheet) throw new Error('找不到盤點單');
+
+    const adminInputs = document.querySelectorAll('.admin-count-input');
+    if (adminInputs.length) {
+      for (const inp of adminInputs) {
+        const itemId = inp.dataset.itemid;
+        const newQty = parseFloat(inp.value) || 0;
+        await sb.from('inventory_counts').update({ actual_qty: newQty }).eq('store_id', sheet.store_id).eq('count_period', period).eq('item_id', itemId);
+      }
+    }
 
     const [{ data: counts }, { data: balances }] = await Promise.all([
       sb.from('inventory_counts').select('item_id, actual_qty').eq('store_id', sheet.store_id).eq('count_period', period),
@@ -1554,6 +1625,15 @@ async function approveSheet(sheetId, period) {
     if (error) throw error;
     reviewCountSheet(sheetId, period);
   } catch (err) { alert('核准失敗：' + (err.message || err)); }
+}
+
+async function returnSheet(sheetId, period) {
+  if (!confirm('確定退回此盤點？門店將需要重新修改後送出。')) return;
+  try {
+    const { error } = await sb.from('count_sheets').update({ status: 'in_progress', completed_at: null }).eq('id', sheetId);
+    if (error) throw error;
+    viewCountPeriod(period);
+  } catch (err) { alert('退回失敗：' + (err.message || err)); }
 }
 
 // ── Store: 門店盤點 ──
@@ -2097,6 +2177,67 @@ async function exportPriceChanges() {
   ws.getColumn('old').numFmt = '#,##0';
   ws.getColumn('new').numFmt = '#,##0';
   await downloadWorkbook(wb, `價格異動_${f.from}_${f.to}.xlsx`);
+}
+
+// ══════════ STOCK (庫存查詢) ══════════
+let stockStoreId = null;
+async function loadStock() {
+  const el = document.getElementById('stockPage');
+  const isAdmin = currentUser.role === 'admin';
+  const storeId = isAdmin ? stockStoreId : currentUser.store_id;
+
+  const storeOpts = allStores.filter(s => s.is_active).map(s => `<option value="${s.id}" ${stockStoreId === s.id ? 'selected' : ''}>${s.name}</option>`).join('');
+  const picker = isAdmin ? `<div style="padding:12px 16px 4px;display:flex;align-items:center;gap:8px"><span style="font-size:13px;color:var(--text3)">查詢門店：</span><select class="oi-sup-select" style="flex:1;padding:8px 10px;font-size:14px;border-radius:8px;border:1px solid var(--border);background:var(--surface1)" onchange="stockStoreId=this.value;loadStock()"><option value="">請選擇</option>${storeOpts}</select></div>` : '';
+
+  if (!storeId) {
+    el.innerHTML = `<div class="section-bar">庫存查詢</div>${picker}<div class="empty-state"><div class="icon">📦</div><div class="msg">請選擇門店</div></div>`;
+    return;
+  }
+
+  el.innerHTML = `<div class="section-bar">庫存查詢</div>${picker}<div class="loading">載入中…</div>`;
+  const { data: balances } = await sb.from('stock_balance').select('item_id, qty').eq('store_id', storeId);
+  const balMap = {};
+  (balances || []).forEach(b => { balMap[b.item_id] = parseFloat(b.qty) || 0; });
+
+  const items = allItems.filter(i => i.needs_count);
+  const cats = {};
+  items.forEach(i => {
+    const cat = i.category || '其他';
+    if (!cats[cat]) cats[cat] = [];
+    cats[cat].push(i);
+  });
+
+  const storeName = getStoreName(storeId);
+  let html = `<div class="section-bar">庫存查詢</div>${picker}<div style="padding:8px 16px;font-size:13px;color:var(--text3)">${storeName} · ${items.length} 項品項</div>`;
+  for (const [cat, citems] of Object.entries(cats)) {
+    html += `<div style="padding:6px 16px 2px;font-size:12px;font-weight:700;color:var(--text3);letter-spacing:1px">${cat}</div>`;
+    citems.forEach(item => {
+      const qty = balMap[item.id] || 0;
+      const color = qty > 0 ? 'var(--green)' : qty < 0 ? 'var(--red)' : 'var(--text3)';
+      html += `<div class="count-item" style="cursor:pointer" onclick="toggleStockDetail(this,'${item.id}','${storeId}')">
+        <div class="count-item-info"><div class="count-item-name">${item.name}</div><div class="count-item-sub">${item.unit}${item.purchase_price ? ' · $' + item.purchase_price : ''}</div></div>
+        <div style="text-align:right"><div style="font-size:18px;font-weight:700;color:${color}">${qty}</div><div style="font-size:11px;color:var(--text3)">${item.unit}</div></div>
+      </div>`;
+    });
+  }
+  el.innerHTML = html;
+}
+
+async function toggleStockDetail(el, itemId, storeId) {
+  const existing = el.nextElementSibling;
+  if (existing?.classList?.contains('stock-detail')) { existing.remove(); return; }
+  const { data: logs } = await sb.from('stock_ledger').select('change_qty, type, note, created_at').eq('store_id', storeId).eq('item_id', itemId).order('created_at', { ascending: false }).limit(20);
+  if (!logs?.length) return;
+  const typeLabel = { receive: '📥 收貨', fulfill: '📤 出貨', adjust: '🔧 校正', initial: '📋 期初' };
+  const detail = document.createElement('div');
+  detail.className = 'stock-detail';
+  detail.style.cssText = 'padding:4px 16px 12px 32px;background:var(--surface2);border-bottom:1px solid var(--border)';
+  detail.innerHTML = logs.map(l => {
+    const color = l.change_qty > 0 ? 'var(--green)' : 'var(--red)';
+    const sign = l.change_qty > 0 ? '+' : '';
+    return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><div><span style="margin-right:6px">${typeLabel[l.type] || l.type}</span><span style="color:var(--text3)">${l.created_at?.split('T')[0] || ''}</span></div><span style="font-weight:600;color:${color}">${sign}${l.change_qty}</span></div>`;
+  }).join('');
+  el.after(detail);
 }
 
 async function exportStockLedger() {

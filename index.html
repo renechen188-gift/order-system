@@ -778,7 +778,7 @@ async function confirmOneItem(btn, oiId, orderId) {
     const itemId = inp.dataset.itemid;
     const { data: order } = await sb.from('orders').select('store_id').eq('id', orderId).single();
     if (order && itemId) {
-      const { error: ledgerErr } = await sb.from('stock_ledger').insert({ store_id: order.store_id, item_id: itemId, change_qty: rq, type: 'receive', reference_id: orderId, note: '收貨入庫' });
+      const { error: ledgerErr } = await sb.from('stock_ledger').insert({ store_id: order.store_id, item_id: itemId, qty: rq, type: 'receive', ref_type: 'order', ref_id: orderId });
       if (ledgerErr) console.error('stock_ledger insert failed:', ledgerErr);
     } else {
       console.warn('stock_ledger skip: order=', order, 'itemId=', itemId);
@@ -834,8 +834,8 @@ async function confirmReceive(btn, orderId) {
         const oiMap = {};
         (order.order_items || []).forEach(oi => { oiMap[oi.id] = oi.item_id; });
         const ledgerRows = rcvItems.filter(r => oiMap[r.oiid]).map(r => ({
-          store_id: order.store_id, item_id: oiMap[r.oiid], change_qty: r.qty,
-          type: 'receive', reference_id: orderId, note: '收貨入庫'
+          store_id: order.store_id, item_id: oiMap[r.oiid], qty: r.qty,
+          type: 'receive', ref_type: 'order', ref_id: orderId
         }));
         if (ledgerRows.length) await sb.from('stock_ledger').insert(ledgerRows);
       }
@@ -1117,8 +1117,8 @@ async function fulfillAll(btn) {
       (order.order_items || []).forEach(oi => {
         if (oi.ordered_qty > 0) {
           ledgerRows.push({
-            store_id: currentUser.store_id, item_id: oi.item_id, change_qty: -oi.ordered_qty,
-            type: 'fulfill', reference_id: order.id, note: '央廚出貨'
+            store_id: currentUser.store_id, item_id: oi.item_id, qty: -oi.ordered_qty,
+            type: 'fulfill', ref_type: 'order', ref_id: order.id
           });
         }
       });
@@ -1654,7 +1654,7 @@ async function approveSheet(sheetId, period) {
     (counts || []).forEach(c => {
       const diff = c.actual_qty - (sysMap[c.item_id] || 0);
       if (diff !== 0) {
-        adjustRows.push({ store_id: sheet.store_id, item_id: c.item_id, change_qty: diff, type: 'adjust', reference_id: sheetId, note: `盤點校正 ${period}` });
+        adjustRows.push({ store_id: sheet.store_id, item_id: c.item_id, qty: diff, type: 'adjust', ref_type: 'count_sheet', ref_id: sheetId });
       }
     });
     if (adjustRows.length) await sb.from('stock_ledger').insert(adjustRows);
@@ -2324,16 +2324,16 @@ async function loadStock() {
 async function toggleStockDetail(el, itemId, storeId) {
   const existing = el.nextElementSibling;
   if (existing?.classList?.contains('stock-detail')) { existing.remove(); return; }
-  const { data: logs } = await sb.from('stock_ledger').select('change_qty, type, note, created_at').eq('store_id', storeId).eq('item_id', itemId).order('created_at', { ascending: false }).limit(20);
+  const { data: logs } = await sb.from('stock_ledger').select('qty, type, created_at').eq('store_id', storeId).eq('item_id', itemId).order('created_at', { ascending: false }).limit(20);
   if (!logs?.length) return;
   const typeLabel = { receive: '📥 收貨', fulfill: '📤 出貨', adjust: '🔧 校正', initial: '📋 期初' };
   const detail = document.createElement('div');
   detail.className = 'stock-detail';
   detail.style.cssText = 'padding:4px 16px 12px 32px;background:var(--surface2);border-bottom:1px solid var(--border)';
   detail.innerHTML = logs.map(l => {
-    const color = l.change_qty > 0 ? 'var(--green)' : 'var(--red)';
-    const sign = l.change_qty > 0 ? '+' : '';
-    return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><div><span style="margin-right:6px">${typeLabel[l.type] || l.type}</span><span style="color:var(--text3)">${l.created_at?.split('T')[0] || ''}</span></div><span style="font-weight:600;color:${color}">${sign}${l.change_qty}</span></div>`;
+    const color = l.qty > 0 ? 'var(--green)' : 'var(--red)';
+    const sign = l.qty > 0 ? '+' : '';
+    return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><div><span style="margin-right:6px">${typeLabel[l.type] || l.type}</span><span style="color:var(--text3)">${l.created_at?.split('T')[0] || ''}</span></div><span style="font-weight:600;color:${color}">${sign}${l.qty}</span></div>`;
   }).join('');
   el.after(detail);
 }
@@ -2356,15 +2356,15 @@ async function exportStockLedger() {
     { header: '異動類型', key: 'type', width: 12 },
     { header: '數量', key: 'qty', width: 10 },
     { header: '單位', key: 'unit', width: 8 },
-    { header: '備註', key: 'note', width: 18 }
+    { header: '來源', key: 'ref_type', width: 12 }
   ];
   styleHeader(ws);
   rows.forEach(r => {
     ws.addRow({
       date: r.created_at?.split('T')[0] || '', store: r.stores?.name || '',
       name: r.items?.name || '', cat: r.items?.category || '',
-      type: typeLabel[r.type] || r.type, qty: r.change_qty,
-      unit: r.items?.unit || '', note: r.note || ''
+      type: typeLabel[r.type] || r.type, qty: r.qty,
+      unit: r.items?.unit || '', ref_type: r.ref_type || ''
     });
   });
   ws.getColumn('qty').numFmt = '#,##0.##';
@@ -2376,7 +2376,7 @@ async function exportStockSummary() {
   const stores = f.storeId ? allStores.filter(s => s.id === f.storeId) : allStores.filter(s => s.is_active);
   const items = allItems.filter(i => i.needs_count);
 
-  let lq = sb.from('stock_ledger').select('store_id, item_id, change_qty, type').gte('created_at', f.from + 'T00:00:00').lte('created_at', f.to + 'T23:59:59');
+  let lq = sb.from('stock_ledger').select('store_id, item_id, qty, type').gte('created_at', f.from + 'T00:00:00').lte('created_at', f.to + 'T23:59:59');
   if (f.storeId) lq = lq.eq('store_id', f.storeId);
   const { data: ledger } = await lq;
   if (!ledger?.length) { alert('該期間無庫存資料'); return; }
@@ -2386,17 +2386,17 @@ async function exportStockSummary() {
   (ledger || []).forEach(r => {
     const k = key(r.store_id, r.item_id);
     if (!agg[k]) agg[k] = { store_id: r.store_id, item_id: r.item_id, receive: 0, fulfill: 0, adjust: 0 };
-    if (r.type === 'receive') agg[k].receive += parseFloat(r.change_qty) || 0;
-    else if (r.type === 'fulfill') agg[k].fulfill += parseFloat(r.change_qty) || 0;
-    else if (r.type === 'adjust') agg[k].adjust += parseFloat(r.change_qty) || 0;
+    if (r.type === 'receive') agg[k].receive += parseFloat(r.qty) || 0;
+    else if (r.type === 'fulfill') agg[k].fulfill += parseFloat(r.qty) || 0;
+    else if (r.type === 'adjust') agg[k].adjust += parseFloat(r.qty) || 0;
   });
 
-  let pq = sb.from('stock_ledger').select('store_id, item_id, change_qty').lt('created_at', f.from + 'T00:00:00');
+  let pq = sb.from('stock_ledger').select('store_id, item_id, qty').lt('created_at', f.from + 'T00:00:00');
   let bq = sb.from('stock_balance').select('store_id, item_id, qty');
   if (f.storeId) { pq = pq.eq('store_id', f.storeId); bq = bq.eq('store_id', f.storeId); }
   const [{ data: priorLedger }, { data: balNow }] = await Promise.all([pq, bq]);
   const before = {};
-  (priorLedger || []).forEach(r => { const k2 = key(r.store_id, r.item_id); before[k2] = (before[k2] || 0) + (parseFloat(r.change_qty) || 0); });
+  (priorLedger || []).forEach(r => { const k2 = key(r.store_id, r.item_id); before[k2] = (before[k2] || 0) + (parseFloat(r.qty) || 0); });
   const now = {};
   (balNow || []).forEach(r => { now[key(r.store_id, r.item_id)] = parseFloat(r.qty) || 0; });
 

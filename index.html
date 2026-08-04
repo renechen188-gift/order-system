@@ -1067,7 +1067,6 @@ async function loadFulfill() {
   const sortedDates = Object.keys(dateGroups).sort();
 
   let html = `<div class="section-bar">待出貨（${sortedDates.length} 天，${orders.length} 筆訂單）</div>`;
-  let copyIdx = 0;
 
   for (const date of sortedDates) {
     const dayOrders = dateGroups[date];
@@ -1088,29 +1087,11 @@ async function loadFulfill() {
 
     for (const [cat, items] of Object.entries(catItems)) {
       const il = Object.values(items);
-      const copyId = 'copy-ful-' + copyIdx++;
-      const storeMap = {};
-      il.forEach(it => it.stores.forEach(s => {
-        if (!storeMap[s.store]) storeMap[s.store] = [];
-        storeMap[s.store].push(`  ${it.name} ${s.qty}${it.unit}`);
-      }));
-      let catCopy = `🍳 央廚出貨單【${cat}】\n📅 ${date}\n`;
-      const brandStores = { '🔴 麻媽家': [], '🔵 涼三伯': [] };
-      for (const [store, lines] of Object.entries(storeMap)) {
-        const brand = store.startsWith('涼三伯') ? '🔵 涼三伯' : '🔴 麻媽家';
-        brandStores[brand].push({ store, lines });
-      }
-      for (const [brand, stores] of Object.entries(brandStores)) {
-        if (!stores.length) continue;
-        catCopy += `\n━━ ${brand} ━━\n`;
-        stores.forEach(({ store, lines }) => { catCopy += `\n📍 ${sn(store)}：\n${lines.join('\n')}\n`; });
-      }
-
       html += `<div class="card" style="margin:0 16px 10px"><div class="card-header"><div class="card-header-left"><div class="card-supplier">${cat}</div><div class="card-date">${il.length} 項品項</div></div></div>`;
       for (const it of il) {
         html += `<div class="card-row" style="flex-wrap:wrap"><div class="cr-info" style="width:100%;margin-bottom:6px"><div class="cr-name">${it.name}<span style="font-size:12px;color:var(--text3);margin-left:6px">叫 ${it.total} ${it.unit}</span></div></div><div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">${it.stores.map(s => { const isCool = s.store.startsWith('涼三伯'); const color = isCool ? '#3b82f6' : '#ef4444'; return `<span class="fulfill-store" style="border-color:${color}40;color:${color};display:inline-flex;align-items:center;gap:3px;padding:4px 8px">${sn(s.store)}<input type="number" class="ful-qty" value="${s.qty}" data-oiid="${s.oiId}" data-orderid="${s.orderId}" data-ordered="${s.qty}" inputmode="decimal" min="0" onfocus="this.select()" style="width:42px;height:24px;border:1px solid ${color}60;border-radius:4px;text-align:center;font-size:13px;font-weight:600;font-family:inherit;color:${color};background:transparent;outline:none">${it.unit}</span>`; }).join('')}</div></div>`;
       }
-      html += `<div class="copy-text" id="${copyId}">${catCopy}</div><button class="copy-btn" onclick="copyToClipboard('${copyId}')">📋 複製【${cat}】</button></div>`;
+      html += '</div>';
     }
   }
   html += `<div style="padding:12px 16px"><button class="card-btn btn-purple" style="width:100%;padding:14px;border-radius:12px;font-size:16px;font-weight:700;border:none;color:#fff;background:var(--purple);cursor:pointer" onclick="fulfillAll(this)">確認全部出貨</button></div>`;

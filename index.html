@@ -778,7 +778,10 @@ async function confirmOneItem(btn, oiId, orderId) {
     const itemId = inp.dataset.itemid;
     const { data: order } = await sb.from('orders').select('store_id').eq('id', orderId).single();
     if (order && itemId) {
-      await sb.from('stock_ledger').insert({ store_id: order.store_id, item_id: itemId, change_qty: rq, type: 'receive', reference_id: orderId, note: '收貨入庫' });
+      const { error: ledgerErr } = await sb.from('stock_ledger').insert({ store_id: order.store_id, item_id: itemId, change_qty: rq, type: 'receive', reference_id: orderId, note: '收貨入庫' });
+      if (ledgerErr) console.error('stock_ledger insert failed:', ledgerErr);
+    } else {
+      console.warn('stock_ledger skip: order=', order, 'itemId=', itemId);
     }
     row.classList.add('done');
     const card = row.closest('.card');
@@ -2279,7 +2282,8 @@ async function loadStock() {
   }
 
   el.innerHTML = `<div class="section-bar">庫存查詢</div>${picker}<div class="loading">載入中…</div>`;
-  const { data: balances } = await sb.from('stock_balance').select('item_id, qty').eq('store_id', storeId);
+  const { data: balances, error: balErr } = await sb.from('stock_balance').select('item_id, qty').eq('store_id', storeId);
+  if (balErr) console.error('stock_balance query failed:', balErr);
   const balMap = {};
   (balances || []).forEach(b => { balMap[b.item_id] = parseFloat(b.qty) || 0; });
 

@@ -1051,7 +1051,9 @@ async function reviewPrice(id, status) {
 async function loadFulfill() {
   const el = document.getElementById('fulfillPage');
   el.innerHTML = '<div class="section-bar">待出貨訂單</div><div class="loading">載入中…</div>';
-  const { data: orders } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_type', 'internal').in('status', ['submitted']).order('order_date', { ascending: false });
+  let fq = sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_type', 'internal').in('status', ['submitted']).order('order_date', { ascending: false });
+  if (currentUser.store_id) fq = fq.neq('store_id', currentUser.store_id);
+  const { data: orders } = await fq;
 
   if (!orders?.length) { el.innerHTML = '<div class="section-bar">各店叫貨彙總</div><div class="empty-state"><div class="icon">📦</div><div class="msg">目前沒有待出貨訂單</div></div>'; return; }
 
@@ -1108,7 +1110,9 @@ async function loadFulfill() {
 
 async function fulfillAll(btn) {
   btn.disabled = true; btn.textContent = '處理中…';
-  const { data: orders } = await sb.from('orders').select('id, store_id, order_items(item_id, ordered_qty)').eq('order_type', 'internal').eq('status', 'submitted');
+  let faq = sb.from('orders').select('id, store_id, order_items(item_id, ordered_qty)').eq('order_type', 'internal').eq('status', 'submitted');
+  if (currentUser.store_id) faq = faq.neq('store_id', currentUser.store_id);
+  const { data: orders } = await faq;
   const orderIds = (orders || []).map(o => o.id);
   if (orderIds.length) await sb.from('orders').update({ status: 'confirmed', updated_at: new Date().toISOString() }).in('id', orderIds);
 

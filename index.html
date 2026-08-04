@@ -673,8 +673,7 @@ async function loadReceive() {
 async function loadReceiveOverview() {
   const el = document.getElementById('receivePage');
   el.innerHTML = '<div class="section-bar">各店收貨狀態</div><div class="loading">載入中…</div>';
-  const today = getToday();
-  const { data: orders } = await sb.from('orders').select('id, store_id, status, order_date, order_type, stores(name), order_items(id, status)').gte('order_date', today.slice(0, 8) + '01').order('order_date', { ascending: false });
+  const { data: orders } = await sb.from('orders').select('id, store_id, status, order_date, order_type, stores(name), order_items(id, status)').in('status', ['submitted', 'confirmed']).order('order_date', { ascending: false });
 
   const storeGroups = {};
   (orders || []).forEach(o => {
@@ -683,16 +682,14 @@ async function loadReceiveOverview() {
     if (!storeGroups[sn]) storeGroups[sn] = { storeId: sid, total: 0, received: 0, pending: 0, partial: 0 };
     storeGroups[sn].total++;
     const items = o.order_items || [];
-    const allDone = items.length > 0 && items.every(i => i.status === 'received');
     const someDone = items.some(i => i.status === 'received' || i.status === 'short');
-    if (o.status === 'received' || allDone) storeGroups[sn].received++;
-    else if (someDone) storeGroups[sn].partial++;
+    if (someDone) storeGroups[sn].partial++;
     else storeGroups[sn].pending++;
   });
 
-  let html = '<div class="section-bar">各店收貨狀態（本月）</div>';
+  let html = '<div class="section-bar">各店待收貨狀態</div>';
   if (!Object.keys(storeGroups).length) {
-    html += '<div class="empty-state"><div class="icon">📦</div><div class="msg">本月尚無訂單</div></div>';
+    html += '<div class="empty-state"><div class="icon">📦</div><div class="msg">目前沒有待收貨訂單</div></div>';
   } else {
     for (const [store, s] of Object.entries(storeGroups)) {
       const isCool = store.startsWith('涼三伯');
@@ -704,7 +701,6 @@ async function loadReceiveOverview() {
           <div style="display:flex;gap:10px;font-size:13px;font-weight:600">
             ${s.pending ? `<span style="color:var(--red)">⏳ 待收 ${s.pending}</span>` : ''}
             ${s.partial ? `<span style="color:#f59e0b">⚡ 部分 ${s.partial}</span>` : ''}
-            <span style="color:var(--green)">✓ 已收 ${s.received}</span>
           </div>
         </div>
       </div>`;

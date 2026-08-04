@@ -1066,7 +1066,7 @@ async function loadFulfill() {
       if (!catItems[cat]) catItems[cat] = {};
       if (!catItems[cat][key]) catItems[cat][key] = { name: item?.name || '', unit: item?.unit || '', total: 0, stores: [] };
       catItems[cat][key].total += oi.ordered_qty;
-      catItems[cat][key].stores.push({ store: order.stores?.name || '', qty: oi.ordered_qty });
+      catItems[cat][key].stores.push({ store: order.stores?.name || '', qty: oi.ordered_qty, oiId: oi.id, orderId: order.id });
     });
   });
 
@@ -1100,39 +1100,61 @@ async function loadFulfill() {
 
     html += `<div class="card" style="margin-bottom:12px"><div class="card-header"><div class="card-header-left"><div class="card-supplier">${cat}</div><div class="card-date">${il.length} 項品項</div></div></div>`;
     for (const it of il) {
-      html += `<div class="card-row"><div class="cr-info"><div class="cr-name">${it.name}</div><div class="cr-sub">${it.stores.map(s => { const isCool = s.store.startsWith('涼三伯'); return `<span class="fulfill-store" style="border-color:${isCool ? '#3b82f6' : '#ef4444'}40;color:${isCool ? '#3b82f6' : '#ef4444'}">${sn(s.store)} ${s.qty}</span>`; }).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--purple);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
+      html += `<div class="card-row" style="flex-wrap:wrap"><div class="cr-info" style="width:100%;margin-bottom:6px"><div class="cr-name">${it.name}<span style="font-size:12px;color:var(--text3);margin-left:6px">叫 ${it.total} ${it.unit}</span></div></div><div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">${it.stores.map(s => { const isCool = s.store.startsWith('涼三伯'); const color = isCool ? '#3b82f6' : '#ef4444'; return `<span class="fulfill-store" style="border-color:${color}40;color:${color};display:inline-flex;align-items:center;gap:3px;padding:4px 8px">${sn(s.store)}<input type="number" class="ful-qty" value="${s.qty}" data-oiid="${s.oiId}" data-orderid="${s.orderId}" data-ordered="${s.qty}" data-itemid="${s.oiId}" inputmode="decimal" min="0" onfocus="this.select()" style="width:42px;height:24px;border:1px solid ${color}60;border-radius:4px;text-align:center;font-size:13px;font-weight:600;font-family:inherit;color:${color};background:transparent;outline:none">${it.unit}</span>`; }).join('')}</div></div>`;
     }
     html += `<div class="copy-text" id="${copyId}">${catCopy}</div><button class="copy-btn" onclick="copyToClipboard('${copyId}')">📋 複製【${cat}】</button></div>`;
   }
-  html += `<div style="padding:12px 16px"><button class="card-btn btn-purple" style="width:100%;padding:14px;border-radius:12px;font-size:16px;font-weight:700;border:none;color:#fff;background:var(--purple);cursor:pointer" onclick="fulfillAll(this)">全部出貨完成</button></div>`;
+  html += `<div style="padding:12px 16px"><button class="card-btn btn-purple" style="width:100%;padding:14px;border-radius:12px;font-size:16px;font-weight:700;border:none;color:#fff;background:var(--purple);cursor:pointer" onclick="fulfillAll(this)">確認出貨</button></div>`;
   el.innerHTML = html;
 }
 
 async function fulfillAll(btn) {
   btn.disabled = true; btn.textContent = '處理中…';
-  let faq = sb.from('orders').select('id, store_id, order_items(item_id, ordered_qty)').eq('order_type', 'internal').eq('status', 'submitted');
-  if (currentUser.store_id) faq = faq.neq('store_id', currentUser.store_id);
-  const { data: orders } = await faq;
-  const orderIds = (orders || []).map(o => o.id);
-  if (orderIds.length) await sb.from('orders').update({ status: 'confirmed', updated_at: new Date().toISOString() }).in('id', orderIds);
+  try {
+    const inputs = document.querySelectorAll('.ful-qty');
+    if (!inputs.length) return;
 
-  if (orders?.length && currentUser.store_id) {
-    const ledgerRows = [];
-    orders.forEach(order => {
-      (order.order_items || []).forEach(oi => {
-        if (oi.ordered_qty > 0) {
-          ledgerRows.push({
-            store_id: currentUser.store_id, item_id: oi.item_id, qty: -oi.ordered_qty,
-            type: 'fulfill', ref_type: 'order', ref_id: order.id
-          });
-        }
-      });
+    const orderIds = new Set();
+    const oiUpdates = [];
+    inputs.forEach(inp => {
+      const actualQty = parseFloat(inp.value) || 0;
+      const ordered = parseFloat(inp.dataset.ordered) || 0;
+      const oiId = inp.dataset.oiid;
+      const orderId = inp.dataset.orderid;
+      orderIds.add(orderId);
+      oiUpdates.push({ oiId, orderId, actualQty, ordered });
     });
-    if (ledgerRows.length) await sb.from('stock_ledger').insert(ledgerRows);
-  }
 
-  btn.textContent = '已出貨 ✓'; btn.style.background = 'var(--surface2)'; btn.style.color = 'var(--purple)';
-  setTimeout(() => loadFulfill(), 1500);
+    const ids = [...orderIds];
+    if (ids.length) await sb.from('orders').update({ status: 'confirmed', updated_at: new Date().toISOString() }).in('id', ids);
+
+    if (currentUser.store_id) {
+      const oiIds = oiUpdates.filter(u => u.actualQty > 0).map(u => u.oiId);
+      if (oiIds.length) {
+        const { data: oiData } = await sb.from('order_items').select('id, item_id, order_id').in('id', oiIds);
+        const oiMap = {};
+        (oiData || []).forEach(oi => { oiMap[oi.id] = oi; });
+
+        const ledgerRows = [];
+        oiUpdates.forEach(u => {
+          const oi = oiMap[u.oiId];
+          if (oi && u.actualQty > 0) {
+            ledgerRows.push({
+              store_id: currentUser.store_id, item_id: oi.item_id, qty: -u.actualQty,
+              type: 'fulfill', ref_type: 'order', ref_id: u.orderId
+            });
+          }
+        });
+        if (ledgerRows.length) {
+          const { error: le } = await sb.from('stock_ledger').insert(ledgerRows);
+          if (le) console.error('stock_ledger fulfill error:', le);
+        }
+      }
+    }
+
+    btn.textContent = '已出貨 ✓'; btn.style.background = 'var(--surface2)'; btn.style.color = 'var(--purple)';
+    setTimeout(() => loadFulfill(), 1500);
+  } catch (err) { alert('出貨失敗：' + err.message); btn.disabled = false; }
 }
 
 // ══════════ ORDER DETAIL ══════════

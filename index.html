@@ -1050,11 +1050,10 @@ async function reviewPrice(id, status) {
 // ══════════ FULFILL (Kitchen) ══════════
 async function loadFulfill() {
   const el = document.getElementById('fulfillPage');
-  el.innerHTML = '<div class="section-bar">今日各店叫貨彙總 — 待出貨</div><div class="loading">載入中…</div>';
-  const today = getToday();
-  const { data: orders } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_date', today).eq('order_type', 'internal').in('status', ['submitted', 'confirmed']);
+  el.innerHTML = '<div class="section-bar">待出貨訂單</div><div class="loading">載入中…</div>';
+  const { data: orders } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_type', 'internal').in('status', ['submitted']).order('order_date', { ascending: false });
 
-  if (!orders?.length) { el.innerHTML = '<div class="section-bar">今日各店叫貨彙總</div><div class="empty-state"><div class="icon">📦</div><div class="msg">今日沒有門店叫貨</div></div>'; return; }
+  if (!orders?.length) { el.innerHTML = '<div class="section-bar">各店叫貨彙總</div><div class="empty-state"><div class="icon">📦</div><div class="msg">目前沒有待出貨訂單</div></div>'; return; }
 
   const catItems = {};
   orders.forEach(order => {
@@ -1072,7 +1071,9 @@ async function loadFulfill() {
   const sn = s => s.replace('麻媽家','').replace('涼三伯','');
   let totalItems = 0;
 
-  let html = '<div class="section-bar">今日各店叫貨彙總 — 待出貨</div>';
+  const dates = [...new Set(orders.map(o => o.order_date))].sort();
+  const dateLabel = dates.length === 1 ? dates[0] : dates[0] + ' ~ ' + dates[dates.length - 1];
+  let html = `<div class="section-bar">待出貨彙總（${dateLabel}，${orders.length} 筆）</div>`;
   let catIdx = 0;
   for (const [cat, items] of Object.entries(catItems)) {
     const il = Object.values(items);
@@ -1083,7 +1084,7 @@ async function loadFulfill() {
       if (!storeMap[s.store]) storeMap[s.store] = [];
       storeMap[s.store].push(`  ${it.name} ${s.qty}${it.unit}`);
     }));
-    let catCopy = `🍳 央廚出貨單【${cat}】\n📅 ${today}\n`;
+    let catCopy = `🍳 央廚出貨單【${cat}】\n📅 ${dateLabel}\n`;
     const brandStores = { '🔴 麻媽家': [], '🔵 涼三伯': [] };
     for (const [store, lines] of Object.entries(storeMap)) {
       const brand = store.startsWith('涼三伯') ? '🔵 涼三伯' : '🔴 麻媽家';
@@ -1107,9 +1108,9 @@ async function loadFulfill() {
 
 async function fulfillAll(btn) {
   btn.disabled = true; btn.textContent = '處理中…';
-  const today = getToday();
-  const { data: orders } = await sb.from('orders').select('id, store_id, order_items(item_id, ordered_qty)').eq('order_date', today).eq('order_type', 'internal').eq('status', 'submitted');
-  await sb.from('orders').update({ status: 'confirmed', updated_at: new Date().toISOString() }).eq('order_date', today).eq('order_type', 'internal').eq('status', 'submitted');
+  const { data: orders } = await sb.from('orders').select('id, store_id, order_items(item_id, ordered_qty)').eq('order_type', 'internal').eq('status', 'submitted');
+  const orderIds = (orders || []).map(o => o.id);
+  if (orderIds.length) await sb.from('orders').update({ status: 'confirmed', updated_at: new Date().toISOString() }).in('id', orderIds);
 
   if (orders?.length && currentUser.store_id) {
     const ledgerRows = [];
@@ -1126,10 +1127,8 @@ async function fulfillAll(btn) {
     if (ledgerRows.length) await sb.from('stock_ledger').insert(ledgerRows);
   }
 
-  const card = btn.closest('.card');
-  card.querySelector('.card-status').textContent = '已出貨';
-  card.querySelector('.card-status').className = 'card-status status-done';
   btn.textContent = '已出貨 ✓'; btn.style.background = 'var(--surface2)'; btn.style.color = 'var(--purple)';
+  setTimeout(() => loadFulfill(), 1500);
 }
 
 // ══════════ ORDER DETAIL ══════════

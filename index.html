@@ -322,6 +322,7 @@
   <div id="fulfillPage" class="page"></div>
   <div id="itemsPage" class="page"></div>
   <div id="configPage" class="page"></div>
+  <div id="consumePage" class="page"></div>
   <div id="transferPage" class="page"></div>
   <div id="countPage" class="page"></div>
   <div id="suppliersPage" class="page"></div>
@@ -424,11 +425,11 @@ function buildTabs() {
   } else if (currentUser.role === 'ops') {
     tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' });
   } else if (currentUser.role === 'kitchen') {
-    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
+    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
   } else if (currentUser.role === 'kitchen_fulfill') {
-    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'stock', label: '庫存' });
+    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' });
   } else if (currentUser.role === 'kitchen_order') {
-    tabs.push({ id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'stock', label: '庫存' });
+    tabs.push({ id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' });
   } else {
     tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
   }
@@ -472,7 +473,7 @@ async function loadData() {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('#mainTabs .view-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'stock', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer', 'export'].forEach(id => {
+  ['order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'stock', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer', 'export', 'consume'].forEach(id => {
     const el = document.getElementById(id + 'Page');
     if (el) el.classList.toggle('active', id === tab);
   });
@@ -490,6 +491,7 @@ function switchTab(tab) {
   if (tab === 'config') loadConfig();
   if (tab === 'export') renderExportPage();
   if (tab === 'stock') loadStock();
+  if (tab === 'consume') loadConsume();
 }
 
 function getToday() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
@@ -1870,6 +1872,103 @@ async function viewStoreCountReadonly(sheetId, period) {
     }).join('')}`;
 }
 
+// ══════════ CONSUME (領料) ══════════
+let consumeCart = {};
+
+async function loadConsume() {
+  const el = document.getElementById('consumePage');
+  const storeId = currentUser.store_id;
+  if (!storeId) { el.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><div class="msg">請先選擇門店</div></div>'; return; }
+
+  const { data: balances } = await sb.from('stock_balance').select('item_id, qty').eq('store_id', storeId);
+  const balMap = {};
+  (balances || []).forEach(b => { balMap[b.item_id] = b.qty; });
+
+  const inStockItems = allItems.filter(i => (balMap[i.id] || 0) > 0);
+  const cats = ['ALL', ...new Set(inStockItems.map(i => i.category))];
+  const currentCatC = window._consumeCat || 'ALL';
+
+  const { data: recent } = await sb.from('stock_ledger').select('*, items(name, unit)').eq('store_id', storeId).eq('type', 'consume').order('created_at', { ascending: false }).limit(20);
+
+  let html = '<div class="section-bar">領料出庫</div>';
+  html += '<div class="cat-filter" style="padding:8px 16px">' + cats.map(c =>
+    `<button class="cat-btn ${currentCatC === c ? 'active' : ''}" onclick="window._consumeCat='${c}';renderConsumeItems()">${c === 'ALL' ? '全部' : c}</button>`
+  ).join('') + '</div>';
+  html += '<div class="search-wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input type="search" class="search-input" id="consumeSearch" placeholder="搜尋品項…" oninput="renderConsumeItems()"></div>';
+  html += '<div id="consumeItemList"></div>';
+  html += '<div id="consumeFloat" class="cart-float hidden" onclick="submitConsume()"><span>確認領料</span><span class="cart-badge" id="consumeBadge">0 項</span></div>';
+
+  if (recent?.length) {
+    html += '<div class="section-bar" style="margin-top:20px">近期領料紀錄</div>';
+    recent.forEach(r => {
+      const d = new Date(r.created_at);
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 16px;border-bottom:1px solid var(--border)"><div><div style="font-size:13px;font-weight:600">${r.items?.name || ''}</div><div style="font-size:11px;color:var(--text3)">${d.toLocaleDateString('zh-TW')} ${d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}</div></div><div style="font-size:14px;font-weight:600;color:var(--red)">${Math.abs(r.qty)} ${r.items?.unit || ''}</div></div>`;
+    });
+  }
+
+  el.innerHTML = html;
+  window._consumeBalMap = balMap;
+  window._consumeInStockItems = inStockItems;
+  consumeCart = {};
+  renderConsumeItems();
+}
+
+function renderConsumeItems() {
+  const q = (document.getElementById('consumeSearch')?.value || '').toLowerCase();
+  const cat = window._consumeCat || 'ALL';
+  const balMap = window._consumeBalMap || {};
+  const items = (window._consumeInStockItems || []).filter(i => {
+    if (cat !== 'ALL' && i.category !== cat) return false;
+    if (q && !i.name.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  const list = document.getElementById('consumeItemList');
+  if (!list) return;
+  list.innerHTML = items.map(item => {
+    const stock = balMap[item.id] || 0;
+    const qty = consumeCart[item.id] || 0;
+    return `<div class="order-item ${qty ? 'in-cart' : ''}" style="padding:10px 16px"><div class="oi-info"><div class="oi-name">${item.name}</div><div class="oi-spec"><span class="oi-unit-tag">${item.unit}</span> 庫存 ${stock}</div></div><div class="oi-qty"><button class="qty-btn minus" onclick="adjConsume('${item.id}',-1)">−</button><input type="number" class="qty-input ${qty ? 'has-value' : ''}" value="${qty || ''}" placeholder="0" inputmode="decimal" onfocus="this.select()" onchange="setConsumeQty('${item.id}',this.value)"><button class="qty-btn plus" onclick="adjConsume('${item.id}',1)">+</button></div></div>`;
+  }).join('') || '<div class="empty-state"><div class="icon">📦</div><div class="msg">目前沒有庫存品項</div></div>';
+}
+
+function adjConsume(id, d) {
+  const cur = consumeCart[id] || 0;
+  const max = (window._consumeBalMap || {})[id] || 0;
+  const n = Math.max(0, Math.min(max, cur + d));
+  if (!n) delete consumeCart[id]; else consumeCart[id] = n;
+  updConsumeFloat();
+  renderConsumeItems();
+}
+
+function setConsumeQty(id, v) {
+  const n = parseFloat(v) || 0;
+  const max = (window._consumeBalMap || {})[id] || 0;
+  if (n <= 0) delete consumeCart[id]; else consumeCart[id] = Math.min(n, max);
+  updConsumeFloat();
+  renderConsumeItems();
+}
+
+function updConsumeFloat() {
+  const n = Object.keys(consumeCart).length;
+  const el = document.getElementById('consumeFloat');
+  if (el) { el.classList.toggle('hidden', n === 0); document.getElementById('consumeBadge').textContent = n + ' 項'; }
+}
+
+async function submitConsume() {
+  const entries = Object.entries(consumeCart);
+  if (!entries.length) return;
+  if (!confirm('確認領料 ' + entries.length + ' 項？庫存將直接扣除。')) return;
+  const storeId = currentUser.store_id;
+  const rows = entries.map(([itemId, qty]) => ({
+    store_id: storeId, item_id: itemId, qty: -qty, type: 'consume', ref_type: 'manual', ref_id: null
+  }));
+  const { error } = await sb.from('stock_ledger').insert(rows);
+  if (error) { alert('領料失敗：' + error.message); return; }
+  alert('領料完成，已扣除 ' + entries.length + ' 項庫存');
+  consumeCart = {};
+  loadConsume();
+}
+
 // ══════════ TRANSFERS (調撥紀錄) ══════════
 let transferFilter = 'all';
 
@@ -2349,7 +2448,7 @@ async function toggleStockDetail(el, itemId, storeId) {
   if (existing?.classList?.contains('stock-detail')) { existing.remove(); return; }
   const { data: logs } = await sb.from('stock_ledger').select('qty, type, created_at').eq('store_id', storeId).eq('item_id', itemId).order('created_at', { ascending: false }).limit(20);
   if (!logs?.length) return;
-  const typeLabel = { receive: '📥 收貨', fulfill: '📤 出貨', adjust: '🔧 校正', initial: '📋 期初' };
+  const typeLabel = { receive: '📥 收貨', fulfill: '📤 出貨', adjust: '🔧 校正', initial: '📋 期初', consume: '🍳 領料' };
   const detail = document.createElement('div');
   detail.className = 'stock-detail';
   detail.style.cssText = 'padding:4px 16px 12px 32px;background:var(--surface2);border-bottom:1px solid var(--border)';
@@ -2368,7 +2467,7 @@ async function exportStockLedger() {
   const { data: rows } = await query;
   if (!rows?.length) { alert('該期間無庫存異動'); return; }
 
-  const typeLabel = { receive: '收貨入庫', fulfill: '央廚出貨', adjust: '盤點校正', initial: '期初庫存' };
+  const typeLabel = { receive: '收貨入庫', fulfill: '央廚出貨', adjust: '盤點校正', initial: '期初庫存', consume: '領料出庫' };
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('庫存異動');
   ws.columns = [

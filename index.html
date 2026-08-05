@@ -653,9 +653,10 @@ async function loadReceive() {
   let query = sb.from('orders').select('*, order_items(*, items(*)), stores(*)').in('status', ['submitted', 'confirmed']).order('order_date', { ascending: false });
   if (currentUser.store_id) query = query.eq('store_id', currentUser.store_id);
   const { data: orders } = await query;
-  if (!orders?.length) { el.innerHTML = '<div class="section-bar">待收貨訂單</div><div class="empty-state"><div class="icon">📦</div><div class="msg">目前沒有待收貨訂單</div></div>'; return; }
+  const directBtn = currentUser.store_id ? `<div style="padding:8px 16px"><button class="card-btn" style="width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:600;border:1.5px dashed var(--accent);background:var(--surface);color:var(--accent);cursor:pointer" onclick="openDirectReceive()">＋ 補登收貨（已自行向廠商取貨）</button></div>` : '';
+  if (!orders?.length) { el.innerHTML = '<div class="section-bar">待收貨訂單</div>' + directBtn + '<div class="empty-state"><div class="icon">📦</div><div class="msg">目前沒有待收貨訂單</div></div>'; return; }
 
-  let html = '<div class="section-bar">待收貨訂單</div>';
+  let html = '<div class="section-bar">待收貨訂單</div>' + directBtn;
   orders.forEach(order => {
     const supGroups = {};
     (order.order_items || []).filter(oi => oi.status !== 'received').forEach(oi => {
@@ -718,6 +719,20 @@ async function loadReceiveOverview() {
       </div>`;
     }
   }
+
+  const drList = await loadDirectReceiveReviews();
+  if (drList.length) {
+    html += '<div class="section-bar" style="margin-top:16px">⚠️ 補登收貨待審核（' + drList.length + ' 筆）</div>';
+    drList.forEach(dr => {
+      const d = new Date(dr.created_at);
+      html += `<div class="card" style="margin:8px 16px;border-left:3px solid #f59e0b" id="dr-${dr.id}">
+        <div style="padding:12px 16px"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:15px;font-weight:700">${dr.items?.name || ''}</div><div style="font-size:14px;font-weight:700;color:var(--accent)">${dr.qty} ${dr.items?.unit || ''}</div></div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">${dr.stores?.name || ''} · ${d.toLocaleDateString('zh-TW')} ${d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}</div>
+        ${dr.reason ? `<div style="font-size:12px;color:var(--text2);margin-top:4px;padding:6px 8px;background:var(--surface2);border-radius:6px">📝 ${dr.reason}</div>` : ''}
+        <div style="display:flex;gap:8px;margin-top:8px"><button class="pri-btn approve" onclick="reviewDirectReceive('${dr.id}','approved')">✓ 核准入庫</button><button class="pri-btn reject" onclick="reviewDirectReceive('${dr.id}','rejected')">✗ 駁回</button></div></div></div>`;
+    });
+  }
+
   el.innerHTML = html;
 }
 
@@ -856,6 +871,108 @@ async function confirmReceive(btn, orderId) {
     if ([...card.querySelectorAll('.rcv-price-input')].some(i => parseFloat(i.value) !== parseFloat(i.dataset.sys)))
       showModal('📋', '收貨已確認', '偵測到價格異動，已自動回報管理後台審核');
   } catch (err) { alert('確認失敗：' + err.message); btn.disabled = false; btn.textContent = '一鍵全部確認收貨'; }
+}
+
+// ══════════ DIRECT RECEIVE (補登收貨) ══════════
+let directCart = {};
+
+function openDirectReceive() {
+  document.getElementById('appRoot').style.display = 'none';
+  const page = document.getElementById('cartPage');
+  page.style.display = 'block';
+  directCart = {};
+  renderDirectReceive();
+}
+
+function renderDirectReceive() {
+  const cats = ['ALL', ...new Set(allItems.map(i => i.category))];
+  const currentCatD = window._directCat || 'ALL';
+  const q = window._directQ || '';
+  const filtered = allItems.filter(i => {
+    if (currentCatD !== 'ALL' && i.category !== currentCatD) return false;
+    if (q && !i.name.toLowerCase().includes(q.toLowerCase())) return false;
+    return true;
+  });
+
+  let html = '<div style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div style="font-size:18px;font-weight:700" onclick="closeDirectReceive()">‹ 補登收貨</div></div>';
+  html += '<div style="background:var(--surface2);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--text3)">⚠️ 已自行向廠商取貨，需補登入系統。送出後需管理者審核才會入庫。</div>';
+  html += '<div class="search-wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input type="search" class="search-input" id="directSearch" placeholder="搜尋品項…" oninput="window._directQ=this.value;renderDirectReceive()"></div>';
+  html += '<div class="cat-filter">' + cats.map(c => `<button class="cat-btn ${currentCatD === c ? 'active' : ''}" onclick="window._directCat='${c}';renderDirectReceive()">${c === 'ALL' ? '全部' : c}</button>`).join('') + '</div>';
+
+  filtered.forEach(item => {
+    const qty = directCart[item.id]?.qty || 0;
+    html += `<div class="order-item ${qty ? 'in-cart' : ''}" style="padding:10px 16px"><div class="oi-info"><div class="oi-name">${item.name}</div><div class="oi-spec"><span class="oi-unit-tag">${item.unit}</span> ${item.spec || ''}</div></div><div class="oi-qty"><button class="qty-btn minus" onclick="adjDirect('${item.id}',-1)">−</button><input type="number" class="qty-input ${qty ? 'has-value' : ''}" value="${qty || ''}" placeholder="0" inputmode="decimal" onfocus="this.select()" onchange="setDirectQty('${item.id}',this.value)"><button class="qty-btn plus" onclick="adjDirect('${item.id}',1)">+</button></div></div>`;
+  });
+
+  const count = Object.keys(directCart).length;
+  if (count) {
+    html += '<div style="padding:12px 16px"><textarea id="directReason" placeholder="補登原因（如：臨時缺貨自行採購）" style="width:100%;min-height:60px;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;box-sizing:border-box"></textarea></div>';
+    html += `<div style="padding:0 16px 20px"><button class="card-btn btn-green" style="width:100%;padding:14px;border-radius:12px;font-size:16px;font-weight:700" onclick="submitDirectReceive()">送出補登申請（${count} 項）</button></div>`;
+  }
+  html += '</div>';
+  document.getElementById('cartContent').innerHTML = html;
+  document.getElementById('cartFloat')?.classList.add('hidden');
+}
+
+function closeDirectReceive() {
+  document.getElementById('cartPage').style.display = 'none';
+  document.getElementById('appRoot').style.display = 'block';
+  window._directCat = 'ALL';
+  window._directQ = '';
+}
+
+function adjDirect(id, d) {
+  const cur = directCart[id]?.qty || 0;
+  const n = Math.max(0, cur + d);
+  if (!n) delete directCart[id]; else directCart[id] = { qty: n };
+  renderDirectReceive();
+}
+
+function setDirectQty(id, v) {
+  const n = parseFloat(v) || 0;
+  if (n <= 0) delete directCart[id]; else directCart[id] = { qty: n };
+  renderDirectReceive();
+}
+
+async function submitDirectReceive() {
+  const entries = Object.entries(directCart);
+  if (!entries.length) return;
+  const reason = document.getElementById('directReason')?.value?.trim() || '';
+  if (!reason) { alert('請填寫補登原因'); return; }
+  const rows = entries.map(([itemId, c]) => ({
+    store_id: currentUser.store_id,
+    item_id: itemId,
+    qty: c.qty,
+    reason,
+    status: 'pending',
+    created_by: currentUser.id
+  }));
+  const { error } = await sb.from('direct_receives').insert(rows);
+  if (error) { alert('送出失敗：' + error.message); return; }
+  alert('補登申請已送出，等待管理者審核');
+  closeDirectReceive();
+  loadReceive();
+}
+
+async function loadDirectReceiveReviews() {
+  const { data: reviews } = await sb.from('direct_receives').select('*, items(name, unit, spec), stores(name)').eq('status', 'pending').order('created_at', { ascending: false });
+  return reviews || [];
+}
+
+async function reviewDirectReceive(id, status) {
+  await sb.from('direct_receives').update({ status, reviewed_by: currentUser.id, reviewed_at: new Date().toISOString() }).eq('id', id);
+  if (status === 'approved') {
+    const { data: dr } = await sb.from('direct_receives').select('store_id, item_id, qty').eq('id', id).single();
+    if (dr) {
+      await sb.from('stock_ledger').insert({ store_id: dr.store_id, item_id: dr.item_id, qty: dr.qty, type: 'receive', ref_type: 'direct_receive', ref_id: id });
+    }
+  }
+  const el = document.getElementById('dr-' + id);
+  if (el) {
+    el.innerHTML = status === 'approved'
+      ? '<div style="display:flex;align-items:center;gap:8px;padding:6px 0"><span style="font-size:18px">✅</span><span style="font-size:13px;font-weight:600;color:var(--green)">已核准入庫</span></div>'
+      : '<div style="display:flex;align-items:center;gap:8px;padding:6px 0"><span style="font-size:18px">❌</span><span style="font-size:13px;font-weight:600;color:var(--text3)">已駁回</span></div>';
+  }
 }
 
 // ══════════ HISTORY ══════════

@@ -524,7 +524,8 @@ async function switchOpsStore(storeId) {
 }
 
 function renderOrderPage() {
-  const kitchens = allSuppliers.filter(s => s.type === 'central_kitchen');
+  const orderingStore = allStores.find(s => s.id === currentUser.store_id);
+  const kitchens = allSuppliers.filter(s => s.type === 'central_kitchen' && !(orderingStore && orderingStore.name === s.name));
   const storePicker = (currentUser.role === 'admin' || currentUser.role === 'ops') ? `<div style="padding:12px 16px 4px;display:flex;align-items:center;gap:8px"><span style="font-size:13px;color:var(--text3)">代叫門店：</span><select class="oi-sup-select" style="flex:1;padding:8px 10px;font-size:14px;border-radius:8px;border:1px solid var(--border);background:var(--surface1)" onchange="switchOpsStore(this.value)"><option value="">請選擇門店</option>${allStores.filter(s => s.is_active).map(s => `<option value="${s.id}" ${currentUser.store_id === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}</select></div>` : '';
   document.getElementById('orderPage').innerHTML = `
     ${storePicker}
@@ -785,18 +786,24 @@ async function confirmOneItem(btn, oiId, orderId) {
       console.warn('stock_ledger skip: order=', order, 'itemId=', itemId);
     }
     row.classList.add('done');
+    row.style.opacity = '0.5';
     const card = row.closest('.card');
-    const remaining = card.querySelectorAll('.rcv-row:not(.done)');
-    if (!remaining.length) {
-      const { data: allOi } = await sb.from('order_items').select('status').eq('order_id', orderId);
-      const allDone = allOi?.every(oi => oi.status === 'received');
-      if (allDone) {
-        await sb.from('orders').update({ status: 'received', updated_at: new Date().toISOString() }).eq('id', orderId);
-        card.querySelector('.card-status').textContent = '已確認';
-        card.querySelector('.card-status').className = 'card-status status-done';
+    const container = card || row.closest('.store-rcv-detail');
+    if (container) {
+      const remaining = container.querySelectorAll('.rcv-row:not(.done)');
+      if (!remaining.length) {
+        const { data: allOi } = await sb.from('order_items').select('status').eq('order_id', orderId);
+        const allDone = allOi?.every(oi => oi.status === 'received');
+        if (allDone) {
+          await sb.from('orders').update({ status: 'received', updated_at: new Date().toISOString() }).eq('id', orderId);
+          if (card) {
+            const st = card.querySelector('.card-status');
+            if (st) { st.textContent = '已確認'; st.className = 'card-status status-done'; }
+          }
+        }
+        const allBtn = card?.querySelector('.card-actions .btn-green');
+        if (allBtn) { allBtn.textContent = '本次已確認 ✓'; allBtn.disabled = true; allBtn.style.background = 'var(--surface2)'; allBtn.style.color = 'var(--green)'; }
       }
-      const allBtn = card.querySelector('.card-actions .btn-green');
-      if (allBtn) { allBtn.textContent = '本次已確認 ✓'; allBtn.disabled = true; allBtn.style.background = 'var(--surface2)'; allBtn.style.color = 'var(--green)'; }
     }
   } catch (err) { alert('確認失敗：' + err.message); btn.disabled = false; }
 }

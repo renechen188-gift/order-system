@@ -2642,18 +2642,30 @@ async function loadStock() {
 async function toggleStockDetail(el, itemId, storeId) {
   const existing = el.nextElementSibling;
   if (existing?.classList?.contains('stock-detail')) { existing.remove(); return; }
-  const { data: logs } = await sb.from('stock_ledger').select('qty, type, created_at').eq('store_id', storeId).eq('item_id', itemId).order('created_at', { ascending: false }).limit(20);
+  const { data: logs } = await sb.from('stock_ledger').select('id, qty, type, created_at').eq('store_id', storeId).eq('item_id', itemId).order('created_at', { ascending: false }).limit(20);
   if (!logs?.length) return;
   const typeLabel = { receive: '📥 收貨', fulfill: '📤 出貨', adjust: '🔧 校正', initial: '📋 期初', consume: '🍳 領料' };
+  const isAdmin = currentUser?.role === 'admin';
   const detail = document.createElement('div');
   detail.className = 'stock-detail';
   detail.style.cssText = 'padding:4px 16px 12px 32px;background:var(--surface2);border-bottom:1px solid var(--border)';
   detail.innerHTML = logs.map(l => {
     const color = l.qty > 0 ? 'var(--green)' : 'var(--red)';
     const sign = l.qty > 0 ? '+' : '';
-    return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><div><span style="margin-right:6px">${typeLabel[l.type] || l.type}</span><span style="color:var(--text3)">${l.created_at?.split('T')[0] || ''}</span></div><span style="font-weight:600;color:${color}">${sign}${l.qty}</span></div>`;
+    const delBtn = isAdmin ? `<button onclick="deleteStockEntry('${l.id}',this)" style="margin-left:8px;padding:1px 6px;font-size:11px;border:1px solid var(--red);border-radius:4px;background:transparent;color:var(--red);cursor:pointer">刪除</button>` : '';
+    return `<div class="sl-row" style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px"><div><span style="margin-right:6px">${typeLabel[l.type] || l.type}</span><span style="color:var(--text3)">${l.created_at?.split('T')[0] || ''}</span>${delBtn}</div><span style="font-weight:600;color:${color}">${sign}${l.qty}</span></div>`;
   }).join('');
   el.after(detail);
+}
+
+async function deleteStockEntry(id, btn) {
+  if (!confirm('確定刪除這筆庫存紀錄？刪除後餘額會即時更新')) return;
+  btn.disabled = true; btn.textContent = '…';
+  const { error } = await sb.from('stock_ledger').delete().eq('id', id);
+  if (error) { alert('刪除失敗：' + error.message); btn.disabled = false; btn.textContent = '刪除'; return; }
+  const row = btn.closest('.sl-row');
+  if (row) { row.style.opacity = '0.3'; row.style.textDecoration = 'line-through'; btn.remove(); }
+  loadStock();
 }
 
 async function exportStockLedger() {

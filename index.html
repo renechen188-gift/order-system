@@ -1207,17 +1207,17 @@ async function loadFulfill() {
   for (const date of sortedDates) {
     const dayOrders = dateGroups[date];
     const catItems = {};
+    const dayOrderIds = new Set();
     dayOrders.forEach(order => {
-      (order.order_items || []).filter(oi => (oi.fulfilled_qty || 0) < oi.ordered_qty).forEach(oi => {
+      (order.order_items || []).filter(oi => oi.status !== 'fulfilled').forEach(oi => {
         const item = oi.items;
         const cat = item?.category || '其他';
         const key = item?.id + '_' + date;
         if (!catItems[cat]) catItems[cat] = {};
-        if (!catItems[cat][key]) catItems[cat][key] = { name: item?.name || '', unit: item?.unit || '', itemId: item?.id, totalOrdered: 0, totalFulfilled: 0, stores: [] };
-        const remain = oi.ordered_qty - (oi.fulfilled_qty || 0);
+        if (!catItems[cat][key]) catItems[cat][key] = { name: item?.name || '', unit: item?.unit || '', itemId: item?.id, totalOrdered: 0, stores: [] };
         catItems[cat][key].totalOrdered += oi.ordered_qty;
-        catItems[cat][key].totalFulfilled += (oi.fulfilled_qty || 0);
-        catItems[cat][key].stores.push({ store: order.stores?.name || '', ordered: oi.ordered_qty, fulfilled: oi.fulfilled_qty || 0, remain, oiId: oi.id, orderId: order.id });
+        catItems[cat][key].stores.push({ store: order.stores?.name || '', ordered: oi.ordered_qty, oiId: oi.id, orderId: order.id });
+        dayOrderIds.add(order.id);
       });
     });
 
@@ -1225,56 +1225,76 @@ async function loadFulfill() {
     const dayPending = Object.values(catItems).reduce((s, c) => s + Object.keys(c).length, 0);
     totalPending += dayPending;
 
+    const dateKey = date.replace(/-/g, '');
     html += `<div style="padding:10px 16px 4px;font-size:14px;font-weight:700;color:var(--purple)">📅 ${date}<span style="font-size:12px;font-weight:400;color:var(--text3);margin-left:8px">${dayOrders.length} 筆</span></div>`;
 
     for (const [cat, items] of Object.entries(catItems)) {
       const il = Object.values(items);
       html += `<div class="card" style="margin:0 16px 10px"><div class="card-header"><div class="card-header-left"><div class="card-supplier">${cat}</div><div class="card-date">${il.length} 項品項</div></div></div>`;
       for (const it of il) {
-        const totalRemain = it.totalOrdered - it.totalFulfilled;
-        const partialLabel = it.totalFulfilled > 0 ? `<span style="font-size:11px;color:#f59e0b;margin-left:4px">已出${it.totalFulfilled}</span>` : '';
-        html += `<div class="card-row" style="flex-wrap:wrap"><div class="cr-info" style="width:100%;margin-bottom:6px"><div class="cr-name">${it.name}<span style="font-size:12px;color:var(--text3);margin-left:6px">待出 ${totalRemain} ${it.unit}</span>${partialLabel}</div></div><div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">${it.stores.map(s => {
+        html += `<div class="card-row" style="flex-wrap:wrap"><div class="cr-info" style="width:100%;margin-bottom:6px"><div class="cr-name">${it.name}<span style="font-size:12px;color:var(--text3);margin-left:6px">叫 ${it.totalOrdered} ${it.unit}</span></div></div><div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">${it.stores.map(s => {
           const isCool = s.store.startsWith('涼三伯');
           const color = isCool ? '#3b82f6' : '#ef4444';
-          const partialS = s.fulfilled > 0 ? `<span style="font-size:10px;color:var(--text3)">已${s.fulfilled}/</span>` : '';
-          return `<span class="fulfill-store" id="fs_${s.oiId}" style="border-color:${color}40;color:${color};display:inline-flex;align-items:center;gap:3px;padding:4px 8px">${sn(s.store)} ${partialS}<input type="number" class="ful-qty" value="${s.remain}" data-oiid="${s.oiId}" data-orderid="${s.orderId}" data-ordered="${s.ordered}" data-fulfilled="${s.fulfilled}" data-remain="${s.remain}" data-itemid="${it.itemId}" inputmode="decimal" min="0" max="${s.remain}" onfocus="this.select()" style="width:42px;height:24px;border:1px solid ${color}60;border-radius:4px;text-align:center;font-size:13px;font-weight:600;font-family:inherit;color:${color};background:transparent;outline:none">${it.unit}<button onclick="fulfillOne(this,'${s.oiId}','${s.orderId}','${it.itemId}')" style="width:22px;height:22px;border:1.5px solid ${color};border-radius:4px;background:transparent;color:${color};font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-left:2px">✓</button></span>`;
+          return `<span class="fulfill-store" style="border-color:${color}40;color:${color};display:inline-flex;align-items:center;gap:3px;padding:4px 8px">${sn(s.store)}<input type="number" class="ful-qty" value="${s.ordered}" data-oiid="${s.oiId}" data-orderid="${s.orderId}" data-ordered="${s.ordered}" data-itemid="${it.itemId}" inputmode="decimal" min="0" onfocus="this.select()" oninput="this.style.color=parseFloat(this.value)<parseFloat(this.dataset.ordered)?'var(--red)':'';" style="width:42px;height:24px;border:1px solid ${color}60;border-radius:4px;text-align:center;font-size:13px;font-weight:600;font-family:inherit;color:${color};background:transparent;outline:none">${it.unit}</span>`;
         }).join('')}</div></div>`;
       }
       html += '</div>';
     }
+    html += `<div style="padding:4px 16px 12px"><button class="card-btn btn-purple" data-date="${date}" style="width:100%;padding:12px;border-radius:10px;font-size:15px;font-weight:700;border:none;color:#fff;background:var(--purple);cursor:pointer" onclick="fulfillDay(this,'${date}')">確認 ${date} 出貨</button></div>`;
   }
   html = `<div class="section-bar">待出貨（${sortedDates.length} 天，${totalPending} 項待出）</div>` + html;
   el.innerHTML = html;
 }
 
-async function fulfillOne(btn, oiId, orderId, itemId) {
-  btn.disabled = true;
-  const container = document.getElementById('fs_' + oiId);
-  const inp = container.querySelector('.ful-qty');
-  const qty = parseFloat(inp.value) || 0;
-  const prevFulfilled = parseFloat(inp.dataset.fulfilled) || 0;
-  const ordered = parseFloat(inp.dataset.ordered) || 0;
-  if (qty <= 0) { btn.disabled = false; return; }
+async function fulfillDay(btn, date) {
+  const inputs = [...document.querySelectorAll('.ful-qty')].filter(inp => {
+    const card = inp.closest('.card');
+    const dateHeader = card?.previousElementSibling;
+    return dateHeader?.textContent?.includes(date);
+  });
 
-  const newFulfilled = prevFulfilled + qty;
+  if (!inputs.length) return;
+  const items = inputs.map(inp => ({
+    oiId: inp.dataset.oiid,
+    orderId: inp.dataset.orderid,
+    itemId: inp.dataset.itemid,
+    qty: parseFloat(inp.value) || 0,
+    ordered: parseFloat(inp.dataset.ordered) || 0
+  })).filter(i => i.qty > 0);
+
+  if (!items.length) { alert('沒有要出貨的品項'); return; }
+  const short = items.filter(i => i.qty < i.ordered);
+  let msg = `確認出貨 ${date} 共 ${items.length} 項？`;
+  if (short.length) msg += `\n\n⚠️ ${short.length} 項數量少於叫貨量（短出）`;
+  if (!confirm(msg)) return;
+
+  btn.disabled = true; btn.textContent = '處理中…';
   try {
-    await sb.from('order_items').update({ fulfilled_qty: newFulfilled }).eq('id', oiId);
-    if (currentUser.store_id) {
-      const { error: le } = await sb.from('stock_ledger').insert({ store_id: currentUser.store_id, item_id: itemId, qty: -qty, type: 'fulfill', ref_type: 'order', ref_id: orderId });
+    const orderIds = new Set();
+    const ledgerRows = [];
+    for (const it of items) {
+      await sb.from('order_items').update({ fulfilled_qty: it.qty, status: 'fulfilled' }).eq('id', it.oiId);
+      orderIds.add(it.orderId);
+      if (currentUser.store_id) {
+        ledgerRows.push({ store_id: currentUser.store_id, item_id: it.itemId, qty: -it.qty, type: 'fulfill', ref_type: 'order', ref_id: it.orderId });
+      }
+    }
+    if (ledgerRows.length) {
+      const { error: le } = await sb.from('stock_ledger').insert(ledgerRows);
       if (le) console.error('stock_ledger fulfill error:', le);
     }
 
-    if (newFulfilled >= ordered) {
-      const { data: allOi } = await sb.from('order_items').select('ordered_qty, fulfilled_qty').eq('order_id', orderId);
-      const allDone = allOi?.every(oi => (oi.fulfilled_qty || 0) >= oi.ordered_qty);
+    for (const orderId of orderIds) {
+      const { data: allOi } = await sb.from('order_items').select('status').eq('order_id', orderId);
+      const allDone = allOi?.every(oi => oi.status === 'fulfilled' || oi.status === 'received');
       if (allDone) {
         await sb.from('orders').update({ status: 'confirmed', updated_at: new Date().toISOString() }).eq('id', orderId);
       }
     }
 
-    container.style.opacity = '0.4';
-    container.innerHTML = `<span style="font-size:12px">✅ 已出 ${qty}</span>`;
-  } catch (err) { alert('出貨失敗：' + err.message); btn.disabled = false; }
+    btn.textContent = '已出貨 ✓'; btn.style.background = 'var(--surface2)'; btn.style.color = 'var(--purple)';
+    setTimeout(() => loadFulfill(), 1500);
+  } catch (err) { alert('出貨失敗：' + err.message); btn.disabled = false; btn.textContent = `確認 ${date} 出貨`; }
 }
 
 // ══════════ ORDER DETAIL ══════════

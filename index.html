@@ -554,7 +554,11 @@ function setOrderType(t, kitId) {
 }
 
 function renderCats() {
-  const cats = [...new Set(allItems.filter(i => getItemSupplierType(i) === orderType).map(i => i.category))];
+  const cats = [...new Set(allItems.filter(i => {
+    const maps = itemSupplierMap[i.id] || [];
+    if (orderType === 'internal') return maps.some(m => m.supplier_id === selectedKitchenId);
+    return maps.some(m => { const s = allSuppliers.find(sup => sup.id === m.supplier_id); return s && s.type !== 'central_kitchen'; });
+  }).map(i => i.category))];
   document.getElementById('catFilter').innerHTML = ['ALL', ...cats].map(c =>
     `<button class="cat-btn ${currentCat === c ? 'active' : ''}" onclick="currentCat='${c}';renderCats();renderItems()">${c === 'ALL' ? '全部' : c}</button>`
   ).join('');
@@ -575,7 +579,7 @@ function renderItems() {
     if (orderType === 'internal') {
       if (!selectedKitchenId || !maps.some(m => m.supplier_id === selectedKitchenId)) return false;
     } else {
-      if (getItemSupplierType(item) !== 'external') return false;
+      if (!maps.some(m => { const s = allSuppliers.find(sup => sup.id === m.supplier_id); return s && s.type !== 'central_kitchen'; })) return false;
     }
     if (!maps.some(m => storeSuppliers.includes(m.supplier_id)) && currentUser.role !== 'admin') return false;
     if (currentCat !== 'ALL' && item.category !== currentCat) return false;

@@ -2469,7 +2469,7 @@ async function exportStockSummary() {
 // ══════════ CONFIG (配送設定) ══════════
 async function loadConfig() {
   const el = document.getElementById('configPage');
-  const stores = allStores.filter(s => s.type === 'store');
+  const stores = allStores.filter(s => s.type === 'store' || s.type === 'kitchen' || s.type === 'warehouse');
   const suppliers = allSuppliers;
 
   const { data: mappings } = await sb.from('store_suppliers').select('*');

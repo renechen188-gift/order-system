@@ -1186,7 +1186,7 @@ async function reviewPrice(id, status) {
 async function loadFulfill() {
   const el = document.getElementById('fulfillPage');
   el.innerHTML = '<div class="section-bar">待出貨訂單</div><div class="loading">載入中…</div>';
-  let fq = sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_type', 'internal').in('status', ['submitted']).order('order_date', { ascending: false });
+  let fq = sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_type', 'internal').in('status', ['submitted', 'confirmed']).order('order_date', { ascending: false });
   if (currentUser.store_id) fq = fq.neq('store_id', currentUser.store_id);
   const { data: orders } = await fq;
 
@@ -1201,22 +1201,29 @@ async function loadFulfill() {
   });
   const sortedDates = Object.keys(dateGroups).sort();
 
-  let html = `<div class="section-bar">待出貨（${sortedDates.length} 天，${orders.length} 筆訂單）</div>`;
+  let totalPending = 0;
+  let html = '';
 
   for (const date of sortedDates) {
     const dayOrders = dateGroups[date];
     const catItems = {};
     dayOrders.forEach(order => {
-      (order.order_items || []).forEach(oi => {
+      (order.order_items || []).filter(oi => (oi.fulfilled_qty || 0) < oi.ordered_qty).forEach(oi => {
         const item = oi.items;
         const cat = item?.category || '其他';
-        const key = item?.id || oi.item_id;
+        const key = item?.id + '_' + date;
         if (!catItems[cat]) catItems[cat] = {};
-        if (!catItems[cat][key]) catItems[cat][key] = { name: item?.name || '', unit: item?.unit || '', total: 0, stores: [] };
-        catItems[cat][key].total += oi.ordered_qty;
-        catItems[cat][key].stores.push({ store: order.stores?.name || '', qty: oi.ordered_qty, oiId: oi.id, orderId: order.id });
+        if (!catItems[cat][key]) catItems[cat][key] = { name: item?.name || '', unit: item?.unit || '', itemId: item?.id, totalOrdered: 0, totalFulfilled: 0, stores: [] };
+        const remain = oi.ordered_qty - (oi.fulfilled_qty || 0);
+        catItems[cat][key].totalOrdered += oi.ordered_qty;
+        catItems[cat][key].totalFulfilled += (oi.fulfilled_qty || 0);
+        catItems[cat][key].stores.push({ store: order.stores?.name || '', ordered: oi.ordered_qty, fulfilled: oi.fulfilled_qty || 0, remain, oiId: oi.id, orderId: order.id });
       });
     });
+
+    if (!Object.keys(catItems).length) continue;
+    const dayPending = Object.values(catItems).reduce((s, c) => s + Object.keys(c).length, 0);
+    totalPending += dayPending;
 
     html += `<div style="padding:10px 16px 4px;font-size:14px;font-weight:700;color:var(--purple)">📅 ${date}<span style="font-size:12px;font-weight:400;color:var(--text3);margin-left:8px">${dayOrders.length} 筆</span></div>`;
 
@@ -1224,61 +1231,49 @@ async function loadFulfill() {
       const il = Object.values(items);
       html += `<div class="card" style="margin:0 16px 10px"><div class="card-header"><div class="card-header-left"><div class="card-supplier">${cat}</div><div class="card-date">${il.length} 項品項</div></div></div>`;
       for (const it of il) {
-        html += `<div class="card-row" style="flex-wrap:wrap"><div class="cr-info" style="width:100%;margin-bottom:6px"><div class="cr-name">${it.name}<span style="font-size:12px;color:var(--text3);margin-left:6px">叫 ${it.total} ${it.unit}</span></div></div><div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">${it.stores.map(s => { const isCool = s.store.startsWith('涼三伯'); const color = isCool ? '#3b82f6' : '#ef4444'; return `<span class="fulfill-store" style="border-color:${color}40;color:${color};display:inline-flex;align-items:center;gap:3px;padding:4px 8px">${sn(s.store)}<input type="number" class="ful-qty" value="${s.qty}" data-oiid="${s.oiId}" data-orderid="${s.orderId}" data-ordered="${s.qty}" inputmode="decimal" min="0" onfocus="this.select()" style="width:42px;height:24px;border:1px solid ${color}60;border-radius:4px;text-align:center;font-size:13px;font-weight:600;font-family:inherit;color:${color};background:transparent;outline:none">${it.unit}</span>`; }).join('')}</div></div>`;
+        const totalRemain = it.totalOrdered - it.totalFulfilled;
+        const partialLabel = it.totalFulfilled > 0 ? `<span style="font-size:11px;color:#f59e0b;margin-left:4px">已出${it.totalFulfilled}</span>` : '';
+        html += `<div class="card-row" style="flex-wrap:wrap"><div class="cr-info" style="width:100%;margin-bottom:6px"><div class="cr-name">${it.name}<span style="font-size:12px;color:var(--text3);margin-left:6px">待出 ${totalRemain} ${it.unit}</span>${partialLabel}</div></div><div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">${it.stores.map(s => {
+          const isCool = s.store.startsWith('涼三伯');
+          const color = isCool ? '#3b82f6' : '#ef4444';
+          const partialS = s.fulfilled > 0 ? `<span style="font-size:10px;color:var(--text3)">已${s.fulfilled}/</span>` : '';
+          return `<span class="fulfill-store" id="fs_${s.oiId}" style="border-color:${color}40;color:${color};display:inline-flex;align-items:center;gap:3px;padding:4px 8px">${sn(s.store)} ${partialS}<input type="number" class="ful-qty" value="${s.remain}" data-oiid="${s.oiId}" data-orderid="${s.orderId}" data-ordered="${s.ordered}" data-fulfilled="${s.fulfilled}" data-remain="${s.remain}" data-itemid="${it.itemId}" inputmode="decimal" min="0" max="${s.remain}" onfocus="this.select()" style="width:42px;height:24px;border:1px solid ${color}60;border-radius:4px;text-align:center;font-size:13px;font-weight:600;font-family:inherit;color:${color};background:transparent;outline:none">${it.unit}<button onclick="fulfillOne(this,'${s.oiId}','${s.orderId}','${it.itemId}')" style="width:22px;height:22px;border:1.5px solid ${color};border-radius:4px;background:transparent;color:${color};font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-left:2px">✓</button></span>`;
+        }).join('')}</div></div>`;
       }
       html += '</div>';
     }
   }
-  html += `<div style="padding:12px 16px"><button class="card-btn btn-purple" style="width:100%;padding:14px;border-radius:12px;font-size:16px;font-weight:700;border:none;color:#fff;background:var(--purple);cursor:pointer" onclick="fulfillAll(this)">確認全部出貨</button></div>`;
+  html = `<div class="section-bar">待出貨（${sortedDates.length} 天，${totalPending} 項待出）</div>` + html;
   el.innerHTML = html;
 }
 
-async function fulfillAll(btn) {
-  btn.disabled = true; btn.textContent = '處理中…';
+async function fulfillOne(btn, oiId, orderId, itemId) {
+  btn.disabled = true;
+  const container = document.getElementById('fs_' + oiId);
+  const inp = container.querySelector('.ful-qty');
+  const qty = parseFloat(inp.value) || 0;
+  const prevFulfilled = parseFloat(inp.dataset.fulfilled) || 0;
+  const ordered = parseFloat(inp.dataset.ordered) || 0;
+  if (qty <= 0) { btn.disabled = false; return; }
+
+  const newFulfilled = prevFulfilled + qty;
   try {
-    const inputs = document.querySelectorAll('.ful-qty');
-    if (!inputs.length) return;
-
-    const orderIds = new Set();
-    const oiUpdates = [];
-    inputs.forEach(inp => {
-      const actualQty = parseFloat(inp.value) || 0;
-      const ordered = parseFloat(inp.dataset.ordered) || 0;
-      const oiId = inp.dataset.oiid;
-      const orderId = inp.dataset.orderid;
-      orderIds.add(orderId);
-      oiUpdates.push({ oiId, orderId, actualQty, ordered });
-    });
-
-    const ids = [...orderIds];
-    if (ids.length) await sb.from('orders').update({ status: 'confirmed', updated_at: new Date().toISOString() }).in('id', ids);
-
+    await sb.from('order_items').update({ fulfilled_qty: newFulfilled }).eq('id', oiId);
     if (currentUser.store_id) {
-      const oiIds = oiUpdates.filter(u => u.actualQty > 0).map(u => u.oiId);
-      if (oiIds.length) {
-        const { data: oiData } = await sb.from('order_items').select('id, item_id, order_id').in('id', oiIds);
-        const oiMap = {};
-        (oiData || []).forEach(oi => { oiMap[oi.id] = oi; });
+      const { error: le } = await sb.from('stock_ledger').insert({ store_id: currentUser.store_id, item_id: itemId, qty: -qty, type: 'fulfill', ref_type: 'order', ref_id: orderId });
+      if (le) console.error('stock_ledger fulfill error:', le);
+    }
 
-        const ledgerRows = [];
-        oiUpdates.forEach(u => {
-          const oi = oiMap[u.oiId];
-          if (oi && u.actualQty > 0) {
-            ledgerRows.push({
-              store_id: currentUser.store_id, item_id: oi.item_id, qty: -u.actualQty,
-              type: 'fulfill', ref_type: 'order', ref_id: u.orderId
-            });
-          }
-        });
-        if (ledgerRows.length) {
-          const { error: le } = await sb.from('stock_ledger').insert(ledgerRows);
-          if (le) console.error('stock_ledger fulfill error:', le);
-        }
+    if (newFulfilled >= ordered) {
+      const { data: allOi } = await sb.from('order_items').select('ordered_qty, fulfilled_qty').eq('order_id', orderId);
+      const allDone = allOi?.every(oi => (oi.fulfilled_qty || 0) >= oi.ordered_qty);
+      if (allDone) {
+        await sb.from('orders').update({ status: 'confirmed', updated_at: new Date().toISOString() }).eq('id', orderId);
       }
     }
 
-    btn.textContent = '已出貨 ✓'; btn.style.background = 'var(--surface2)'; btn.style.color = 'var(--purple)';
-    setTimeout(() => loadFulfill(), 1500);
+    container.style.opacity = '0.4';
+    container.innerHTML = `<span style="font-size:12px">✅ 已出 ${qty}</span>`;
   } catch (err) { alert('出貨失敗：' + err.message); btn.disabled = false; }
 }
 
@@ -1340,10 +1335,33 @@ async function showOrderDetail(orderId) {
         ${canEdit ? `<button class="form-save" style="margin-top:16px" onclick="saveOrderEdits('${order.id}')">💾 儲存修改</button>` : ''}
         ${currentUser.store_id || isAdminOrOps ? `<button class="form-save" style="margin-top:10px;background:var(--surface2);color:var(--text)" onclick="copyOrder('${order.id}')">複製此訂單到叫貨單</button>` : ''}
         ${canCancel ? `<button style="margin-top:10px;width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:600;border:1px solid var(--red);color:var(--red);background:transparent;cursor:pointer" onclick="cancelOrder('${order.id}',this)">取消此訂單</button>` : ''}
+        ${isAdminOrOps && notDone && order.order_type === 'internal' ? `<button style="margin-top:10px;width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:600;border:1px solid #f59e0b;color:#f59e0b;background:transparent;cursor:pointer" onclick="forceCloseOrder('${order.id}',this)">⚠️ 強制結單（未出完直接關閉）</button>` : ''}
       </div>
     </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+async function forceCloseOrder(orderId, btn) {
+  if (!confirm('確定強制結單？未出貨的品項將不再出貨，門店也無法再收貨。')) return;
+  btn.disabled = true; btn.textContent = '處理中…';
+  await sb.from('orders').update({ status: 'received', updated_at: new Date().toISOString() }).eq('id', orderId);
+  const { data: ois } = await sb.from('order_items').select('id, ordered_qty, fulfilled_qty, received_qty').eq('order_id', orderId);
+  if (ois) {
+    for (const oi of ois) {
+      const fq = oi.fulfilled_qty || 0;
+      const rq = oi.received_qty || 0;
+      if (fq > 0 || rq > 0) {
+        await sb.from('order_items').update({ status: rq >= (oi.ordered_qty || 0) ? 'received' : 'short' }).eq('id', oi.id);
+      } else {
+        await sb.from('order_items').update({ status: 'short', fulfilled_qty: 0, received_qty: 0 }).eq('id', oi.id);
+      }
+    }
+  }
+  alert('已強制結單');
+  document.getElementById('formOverlay')?.remove();
+  if (currentTab === 'receive') loadReceive();
+  if (currentTab === 'history') loadHistory();
 }
 
 async function copyOrder(orderId) {

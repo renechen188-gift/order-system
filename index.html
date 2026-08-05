@@ -404,10 +404,11 @@ async function initApp() {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appRoot').style.display = 'block';
 
-  const roleLabel = { admin: '管理者', store_manager: currentUser.stores?.name || '門店', kitchen: currentUser.stores?.name || '央廚', ops: '營運' };
+  const isKitchen = currentUser.role === 'kitchen' || currentUser.role === 'kitchen_fulfill' || currentUser.role === 'kitchen_order';
+  const roleLabel = { admin: '管理者', store_manager: currentUser.stores?.name || '門店', kitchen: currentUser.stores?.name || '央廚', kitchen_fulfill: '央廚·出貨', kitchen_order: '央廚·進貨', ops: '營運' };
   document.getElementById('userLabel').textContent = roleLabel[currentUser.role] || currentUser.role;
 
-  if (currentUser.role === 'kitchen') {
+  if (isKitchen) {
     document.getElementById('appLogo').innerHTML = `麻媽家·涼三伯 <span>${currentUser.stores?.name || '央廚'}</span>`;
     document.getElementById('appLogo').classList.add('kitchen');
   }
@@ -424,8 +425,12 @@ function buildTabs() {
     tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' });
   } else if (currentUser.role === 'kitchen') {
     tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
+  } else if (currentUser.role === 'kitchen_fulfill') {
+    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'stock', label: '庫存' });
+  } else if (currentUser.role === 'kitchen_order') {
+    tabs.push({ id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'stock', label: '庫存' });
   } else {
-    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
+    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
   }
 
   document.getElementById('mainTabs').innerHTML = tabs.map((t, i) =>
@@ -764,14 +769,10 @@ async function confirmOneItem(btn, oiId, orderId) {
       const nw = parseFloat(priceInp.value) || 0;
       const itemId = priceInp.dataset.itemid;
       if (itemId && nw) {
-        if (sysStr === '' || sysStr === 'null') {
-          await sb.from('items').update({ purchase_price: nw }).eq('id', itemId);
-        } else {
-          const sys = parseFloat(sysStr);
-          if (nw !== sys) {
-            const maps = itemSupplierMap[itemId] || [];
-            await sb.from('price_reviews').insert({ item_id: itemId, supplier_id: maps[0]?.supplier_id, store_id: currentUser.store_id, reported_by: currentUser.id, old_price: sys, new_price: nw, status: 'pending' });
-          }
+        const sys = (sysStr === '' || sysStr === 'null') ? null : parseFloat(sysStr);
+        if (sys === null || nw !== sys) {
+          const maps = itemSupplierMap[itemId] || [];
+          await sb.from('price_reviews').insert({ item_id: itemId, supplier_id: maps[0]?.supplier_id, store_id: currentUser.store_id, reported_by: currentUser.id, old_price: sys, new_price: nw, status: 'pending' });
         }
       }
     }
@@ -816,14 +817,10 @@ async function confirmReceive(btn, orderId) {
       const nw = parseFloat(inp.value) || 0;
       const itemId = inp.dataset.itemid;
       if (!itemId || !nw) continue;
-      if (sysStr === '' || sysStr === 'null') {
-        await sb.from('items').update({ purchase_price: nw }).eq('id', itemId);
-      } else {
-        const sys = parseFloat(sysStr);
-        if (nw !== sys) {
-          const maps = itemSupplierMap[itemId] || [];
-          await sb.from('price_reviews').insert({ item_id: itemId, supplier_id: maps[0]?.supplier_id, store_id: currentUser.store_id, reported_by: currentUser.id, old_price: sys, new_price: nw, status: 'pending' });
-        }
+      const sys = (sysStr === '' || sysStr === 'null') ? null : parseFloat(sysStr);
+      if (sys === null || nw !== sys) {
+        const maps = itemSupplierMap[itemId] || [];
+        await sb.from('price_reviews').insert({ item_id: itemId, supplier_id: maps[0]?.supplier_id, store_id: currentUser.store_id, reported_by: currentUser.id, old_price: sys, new_price: nw, status: 'pending' });
       }
     }
     await sb.from('orders').update({ status: 'received', updated_at: new Date().toISOString() }).eq('id', orderId);
@@ -1038,7 +1035,11 @@ async function loadPriceReviews() {
 }
 
 async function reviewPrice(id, status) {
+  const { data: pr } = await sb.from('price_reviews').select('item_id, new_price').eq('id', id).single();
   await sb.from('price_reviews').update({ status, reviewed_by: currentUser.id, reviewed_at: new Date().toISOString() }).eq('id', id);
+  if (status === 'approved' && pr) {
+    await sb.from('items').update({ purchase_price: pr.new_price }).eq('id', pr.item_id);
+  }
   const el = document.getElementById('pr-' + id);
   if (status === 'approved') {
     el.innerHTML = `<div style="display:flex;align-items:center;gap:10px;padding:4px 0"><span style="font-size:20px">✅</span><div><div style="font-size:14px;font-weight:600;color:var(--green)">已核准</div><div style="font-size:12px;color:var(--text3)">系統價格已更新</div></div></div>`;

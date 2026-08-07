@@ -776,6 +776,9 @@ async function toggleStoreReceiveDetail(cardEl, storeId, storeName) {
 async function confirmOneItem(btn, oiId, orderId) {
   btn.disabled = true;
   const row = document.getElementById('rcv_' + oiId);
+  if (row.classList.contains('done')) return;
+  const { data: curOi } = await sb.from('order_items').select('status').eq('id', oiId).single();
+  if (curOi?.status === 'received') { row.classList.add('done'); row.style.opacity = '0.5'; return; }
   const inp = row.querySelector('.cr-input');
   const rq = parseFloat(inp.value) || 0;
   if (rq <= 0) { btn.disabled = false; return; }
@@ -801,10 +804,10 @@ async function confirmOneItem(btn, oiId, orderId) {
     const itemId = inp.dataset.itemid;
     const { data: order } = await sb.from('orders').select('store_id').eq('id', orderId).single();
     if (order && itemId) {
-      const { error: ledgerErr } = await sb.from('stock_ledger').insert({ store_id: order.store_id, item_id: itemId, qty: rq, type: 'receive', ref_type: 'order', ref_id: orderId });
-      if (ledgerErr) console.error('stock_ledger insert failed:', ledgerErr);
-    } else {
-      console.warn('stock_ledger skip: order=', order, 'itemId=', itemId);
+      const { data: existing } = await sb.from('stock_ledger').select('id').eq('ref_type', 'order_item').eq('ref_id', oiId).limit(1);
+      if (!existing?.length) {
+        await sb.from('stock_ledger').insert({ store_id: order.store_id, item_id: itemId, qty: rq, type: 'receive', ref_type: 'order_item', ref_id: oiId });
+      }
     }
     row.classList.add('done');
     row.style.opacity = '0.5';
@@ -860,11 +863,17 @@ async function confirmReceive(btn, orderId) {
       if (order) {
         const oiMap = {};
         (order.order_items || []).forEach(oi => { oiMap[oi.id] = oi.item_id; });
-        const ledgerRows = rcvItems.filter(r => oiMap[r.oiid]).map(r => ({
-          store_id: order.store_id, item_id: oiMap[r.oiid], qty: r.qty,
-          type: 'receive', ref_type: 'order', ref_id: orderId
-        }));
-        if (ledgerRows.length) await sb.from('stock_ledger').insert(ledgerRows);
+        const candidates = rcvItems.filter(r => oiMap[r.oiid]);
+        if (candidates.length) {
+          const oiIds = candidates.map(r => r.oiid);
+          const { data: existing } = await sb.from('stock_ledger').select('ref_id').eq('ref_type', 'order_item').in('ref_id', oiIds);
+          const existSet = new Set((existing || []).map(e => e.ref_id));
+          const ledgerRows = candidates.filter(r => !existSet.has(r.oiid)).map(r => ({
+            store_id: order.store_id, item_id: oiMap[r.oiid], qty: r.qty,
+            type: 'receive', ref_type: 'order_item', ref_id: r.oiid
+          }));
+          if (ledgerRows.length) await sb.from('stock_ledger').insert(ledgerRows);
+        }
       }
     }
 

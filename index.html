@@ -1481,14 +1481,28 @@ async function saveOrderEdits(orderId) {
 }
 
 async function cancelOrder(orderId, btn) {
-  if (!confirm('確定要取消此訂單？')) return;
+  if (!confirm('確定要取消此訂單？已入庫的庫存會同步扣回。')) return;
   btn.disabled = true; btn.textContent = '取消中…';
+  const { data: order } = await sb.from('orders').select('store_id, order_items(id, item_id, received_qty)').eq('id', orderId).single();
   const { error } = await sb.from('orders').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', orderId);
   if (error) { alert('取消失敗：' + error.message); btn.disabled = false; btn.textContent = '取消此訂單'; return; }
+  if (order) {
+    const oiIds = (order.order_items || []).map(oi => oi.id);
+    if (oiIds.length) {
+      const { data: ledgerRows } = await sb.from('stock_ledger').select('id, item_id, qty, ref_id').eq('ref_type', 'order_item').in('ref_id', oiIds);
+      if (ledgerRows?.length) {
+        const reverseRows = ledgerRows.map(r => ({
+          store_id: order.store_id, item_id: r.item_id, qty: -r.qty,
+          type: 'cancel', ref_type: 'cancel', ref_id: orderId
+        }));
+        await sb.from('stock_ledger').insert(reverseRows);
+      }
+    }
+  }
   document.getElementById('formOverlay')?.remove();
   if (currentTab === 'history') loadHistory();
   if (currentTab === 'receive') loadReceive();
-  showModal('🗑️', '訂單已取消', '');
+  showModal('🗑️', '訂單已取消', order?.order_items?.some(oi => oi.received_qty > 0) ? '已入庫的庫存已同步扣回' : '');
 }
 
 // ══════════ ITEMS MANAGEMENT (Admin) ══════════
@@ -2655,7 +2669,7 @@ async function toggleStockDetail(el, itemId, storeId) {
   if (existing?.classList?.contains('stock-detail')) { existing.remove(); return; }
   const { data: logs } = await sb.from('stock_ledger').select('id, qty, type, created_at').eq('store_id', storeId).eq('item_id', itemId).order('created_at', { ascending: false }).limit(20);
   if (!logs?.length) return;
-  const typeLabel = { receive: '📥 收貨', fulfill: '📤 出貨', adjust: '🔧 校正', initial: '📋 期初', consume: '🍳 領料' };
+  const typeLabel = { receive: '📥 收貨', fulfill: '📤 出貨', adjust: '🔧 校正', initial: '📋 期初', consume: '🍳 領料', cancel: '🚫 取消沖銷' };
   const isAdmin = currentUser?.role === 'admin';
   const detail = document.createElement('div');
   detail.className = 'stock-detail';
@@ -2686,7 +2700,7 @@ async function exportStockLedger() {
   const { data: rows } = await query;
   if (!rows?.length) { alert('該期間無庫存異動'); return; }
 
-  const typeLabel = { receive: '收貨入庫', fulfill: '央廚出貨', adjust: '盤點校正', initial: '期初庫存', consume: '領料出庫' };
+  const typeLabel = { receive: '收貨入庫', fulfill: '央廚出貨', adjust: '盤點校正', initial: '期初庫存', consume: '領料出庫', cancel: '取消沖銷' };
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('庫存異動');
   ws.columns = [

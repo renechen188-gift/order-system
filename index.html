@@ -1175,26 +1175,39 @@ async function loadKitchenSummary() {
 async function loadPriceReviews() {
   const el = document.getElementById('pricePage');
   el.innerHTML = '<div class="section-bar">價格異動待審核</div><div class="loading">載入中…</div>';
-  const { data: reviews } = await sb.from('price_reviews').select('*, items(*), stores(*), suppliers(*)').eq('status', 'pending').order('reported_at', { ascending: false });
+  const [{ data: reviews }, { data: history }] = await Promise.all([
+    sb.from('price_reviews').select('*, items(*), stores(*), suppliers(*)').eq('status', 'pending').order('reported_at', { ascending: false }),
+    sb.from('price_reviews').select('*, items(*), stores(*), suppliers(*)').in('status', ['approved', 'rejected']).order('reviewed_at', { ascending: false }).limit(30)
+  ]);
 
-  if (!reviews?.length) { el.innerHTML = '<div class="section-bar">價格異動審核</div><div class="empty-state"><div class="icon">✅</div><div class="msg">目前沒有待審核的價格異動</div></div>'; return; }
-
-  // Update badge
   const badge = document.getElementById('badge-price');
-  if (badge) { badge.style.display = 'inline-block'; }
+  if (badge) { badge.style.display = reviews?.length ? 'inline-block' : 'none'; }
 
-  el.innerHTML = '<div class="section-bar">價格異動待審核（' + reviews.length + ' 筆）</div>' + reviews.map(pr => {
+  function prCard(pr, showActions) {
     const isNew = pr.old_price == null;
     const diff = isNew ? 0 : pr.new_price - pr.old_price;
     const pct = isNew ? '' : ((diff / pr.old_price) * 100).toFixed(1);
     const isUp = diff > 0;
+    const statusBadge = pr.status === 'approved' ? '<span style="color:var(--green);font-weight:600;font-size:12px">✅ 已核准</span>' : pr.status === 'rejected' ? '<span style="color:var(--red);font-weight:600;font-size:12px">❌ 已駁回</span>' : '';
+    const reviewDate = pr.reviewed_at ? ' · ' + new Date(pr.reviewed_at).toLocaleDateString('zh-TW') : '';
     return `<div class="pri-item" id="pr-${pr.id}">
       <div class="pri-top"><div class="pri-name">${pr.items?.name || ''}</div><div class="pri-store">${pr.stores?.name || ''} · ${new Date(pr.reported_at).toLocaleDateString('zh-TW')}</div></div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:6px">${pr.suppliers?.name || ''} · ${pr.items?.spec || ''}</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:6px">${pr.suppliers?.name || ''} · ${pr.items?.spec || ''}${!showActions ? ' ' + statusBadge + reviewDate : ''}</div>
       <div class="pri-prices">${isNew ? '<span style="color:var(--text3)">首次設價</span><span style="color:var(--text3)">→</span>' : `<span class="pri-old">$${pr.old_price}</span><span style="color:var(--text3)">→</span>`}<span class="pri-new">$${pr.new_price}</span>${!isNew ? `<span class="pri-diff ${isUp ? 'up' : 'down'}">${isUp ? '↑+' : '↓'}${pct}%</span>` : '<span style="color:var(--blue);font-size:12px;font-weight:600">🆕 新價格</span>'}</div>
-      <div class="pri-actions"><button class="pri-btn approve" onclick="reviewPrice('${pr.id}','approved')">✓ 核准更新</button><button class="pri-btn reject" onclick="reviewPrice('${pr.id}','rejected')">✗ 駁回</button></div>
+      ${showActions ? `<div class="pri-actions"><button class="pri-btn approve" onclick="reviewPrice('${pr.id}','approved')">✓ 核准更新</button><button class="pri-btn reject" onclick="reviewPrice('${pr.id}','rejected')">✗ 駁回</button></div>` : ''}
     </div>`;
-  }).join('');
+  }
+
+  let html = '';
+  if (reviews?.length) {
+    html += '<div class="section-bar">價格異動待審核（' + reviews.length + ' 筆）</div>' + reviews.map(pr => prCard(pr, true)).join('');
+  } else {
+    html += '<div class="section-bar">價格異動審核</div><div class="empty-state"><div class="icon">✅</div><div class="msg">目前沒有待審核的價格異動</div></div>';
+  }
+  if (history?.length) {
+    html += '<div class="section-bar" style="margin-top:12px">審核紀錄（近 30 筆）</div>' + history.map(pr => prCard(pr, false)).join('');
+  }
+  el.innerHTML = html;
 }
 
 async function reviewPrice(id, status) {

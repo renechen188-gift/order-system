@@ -580,7 +580,7 @@ function renderCats() {
     return maps.some(m => { const s = allSuppliers.find(sup => sup.id === m.supplier_id); return s && s.type !== 'central_kitchen'; });
   }).map(i => i.category))];
   document.getElementById('catFilter').innerHTML = ['ALL', ...cats].map(c =>
-    `<button class="cat-btn ${currentCat === c ? 'active' : ''}" onclick="currentCat='${c}';renderCats();renderItems()">${c === 'ALL' ? '全部' : c}</button>`
+    `<button class="cat-btn ${currentCat === c ? 'active' : ''}" onclick="currentCat='${c}';renderCats();renderItems()">${c === 'ALL' ? '品項分類' : c}</button>`
   ).join('');
 }
 

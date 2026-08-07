@@ -1205,6 +1205,12 @@ async function reviewPrice(id, status) {
     if (pr.supplier_id) {
       await sb.from('item_suppliers').update({ unit_price: pr.new_price }).eq('item_id', pr.item_id).eq('supplier_id', pr.supplier_id);
     }
+    const it = allItems.find(i => i.id === pr.item_id);
+    if (it) it.purchase_price = pr.new_price;
+    if (pr.supplier_id && itemSupplierMap[pr.item_id]) {
+      const m = itemSupplierMap[pr.item_id].find(x => x.supplier_id === pr.supplier_id);
+      if (m) m.unit_price = pr.new_price;
+    }
   }
   const el = document.getElementById('pr-' + id);
   if (status === 'approved') {

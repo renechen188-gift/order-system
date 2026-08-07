@@ -1114,13 +1114,16 @@ function copyToClipboard(id) {
 }
 
 // ══════════ KITCHEN SUMMARY (Admin) ══════════
-async function loadKitchenSummary() {
+let ksDate = '';
+async function loadKitchenSummary(date) {
   const el = document.getElementById('kitchenSummaryPage');
-  el.innerHTML = '<div class="section-bar">央廚叫貨彙總（今日）</div><div class="loading">載入中…</div>';
   const today = getToday();
-  const { data: orders } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_date', today).eq('order_type', 'internal').in('status', ['submitted', 'confirmed', 'received']);
+  if (date) ksDate = date; else if (!ksDate) ksDate = today;
+  const picker = `<div style="display:flex;align-items:center;gap:10px;padding:12px 16px"><span style="font-size:13px;color:var(--accent);font-weight:600">查詢日期：</span><input type="date" value="${ksDate}" onchange="loadKitchenSummary(this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit"><button onclick="loadKitchenSummary('${today}')" style="padding:6px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;background:var(--surface);cursor:pointer;font-family:inherit">今日</button></div>`;
+  el.innerHTML = '<div class="section-bar">央廚叫貨彙總</div>' + picker + '<div class="loading">載入中…</div>';
+  const { data: orders } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_date', ksDate).eq('order_type', 'internal').in('status', ['submitted', 'confirmed', 'received']);
 
-  if (!orders?.length) { el.innerHTML = '<div class="section-bar">央廚叫貨彙總（今日）</div><div class="empty-state"><div class="icon">📋</div><div class="msg">今日尚無央廚叫貨單</div></div>'; return; }
+  if (!orders?.length) { el.innerHTML = '<div class="section-bar">央廚叫貨彙總</div>' + picker + `<div class="empty-state"><div class="icon">📋</div><div class="msg">${ksDate} 無央廚叫貨單</div></div>`; return; }
 
   const KS_MERGE = { '小菜': '小菜/肉品/蛋品/蔬菜', '肉品': '小菜/肉品/蛋品/蔬菜', '蛋品': '小菜/肉品/蛋品/蔬菜', '蔬菜': '小菜/肉品/蛋品/蔬菜' };
   const catItems = {};
@@ -1139,7 +1142,7 @@ async function loadKitchenSummary() {
   const sn = s => s.replace('麻媽家','').replace('涼三伯','');
   let totalItems = 0;
 
-  let html = '<div class="section-bar">央廚叫貨彙總（今日 ' + today + '）</div>';
+  let html = '<div class="section-bar">央廚叫貨彙總</div>' + picker;
   let catIdx = 0;
   for (const [cat, items] of Object.entries(catItems)) {
     const il = Object.values(items);
@@ -1150,7 +1153,7 @@ async function loadKitchenSummary() {
       if (!storeMap[s.store]) storeMap[s.store] = [];
       storeMap[s.store].push(`  ${it.name} ${s.qty}${it.unit}`);
     }));
-    let catCopy = `🍳 央廚出貨單【${cat}】\n📅 ${today}\n`;
+    let catCopy = `🍳 央廚出貨單【${cat}】\n📅 ${ksDate}\n`;
     const brandStores = { '🔴 麻媽家': [], '🔵 涼三伯': [] };
     for (const [store, lines] of Object.entries(storeMap)) {
       const brand = store.startsWith('涼三伯') ? '🔵 涼三伯' : '🔴 麻媽家';

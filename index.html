@@ -536,27 +536,47 @@ function renderOrderPage() {
       ${kitchens.map((k, i) => `<button class="type-tab" id="tabKit${i}" onclick="setOrderType('internal','${k.id}')" data-kit="${k.id}"><div class="type-tab-icon">🏭</div><div class="type-tab-label">${k.name}</div><div class="type-tab-sub">${k.note || '半成品'}</div></button>`).join('')}
     </div>
     <div class="search-wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input type="search" class="search-input" id="searchInput" placeholder="搜尋品項…" oninput="renderItems()"></div>
+    <div id="supFilter"></div>
     <div class="cat-filter" id="catFilter"></div>
     <div class="count-bar" id="countBar"></div>
     <div id="itemList"></div>`;
-  renderCats();
+  renderSupFilter(); renderCats();
   renderItems();
 }
 
 let selectedKitchenId = null;
+let selectedSupFilter = 'ALL';
 function setOrderType(t, kitId) {
-  orderType = t; currentCat = 'ALL';
+  orderType = t; currentCat = 'ALL'; selectedSupFilter = 'ALL';
   selectedKitchenId = kitId || null;
   document.getElementById('tabExt').classList.toggle('active', t === 'external');
   document.querySelectorAll('[id^="tabKit"]').forEach(b => b.classList.toggle('active', t === 'internal' && b.dataset.kit === kitId));
   document.getElementById('searchInput').value = '';
-  renderCats(); renderItems();
+  renderSupFilter(); renderCats(); renderItems();
+}
+function renderSupFilter() {
+  const el = document.getElementById('supFilter');
+  if (!el) return;
+  if (orderType !== 'external') { el.innerHTML = ''; return; }
+  const supIds = new Set();
+  allItems.forEach(i => {
+    (itemSupplierMap[i.id] || []).forEach(m => {
+      const s = allSuppliers.find(sup => sup.id === m.supplier_id);
+      if (s && s.type !== 'central_kitchen' && (currentUser.role === 'admin' || storeSuppliers.includes(m.supplier_id))) supIds.add(m.supplier_id);
+    });
+  });
+  const sups = [...supIds].map(id => ({ id, name: getSupplierName(id) })).filter(s => s.name).sort((a, b) => a.name.localeCompare(b.name, 'zh-TW'));
+  if (sups.length <= 1) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div style="display:flex;gap:6px;overflow-x:auto;padding:0 16px 6px;-webkit-overflow-scrolling:touch">${[{ id: 'ALL', name: '全部廠商' }, ...sups].map(s =>
+    `<button class="cat-btn ${selectedSupFilter === s.id ? 'active' : ''}" onclick="selectedSupFilter='${s.id}';currentCat='ALL';renderSupFilter();renderCats();renderItems()" style="white-space:nowrap;font-size:12px;padding:5px 12px">${s.name}</button>`
+  ).join('')}</div>`;
 }
 
 function renderCats() {
   const cats = [...new Set(allItems.filter(i => {
     const maps = itemSupplierMap[i.id] || [];
     if (orderType === 'internal') return maps.some(m => m.supplier_id === selectedKitchenId);
+    if (selectedSupFilter !== 'ALL' && !maps.some(m => m.supplier_id === selectedSupFilter)) return false;
     return maps.some(m => { const s = allSuppliers.find(sup => sup.id === m.supplier_id); return s && s.type !== 'central_kitchen'; });
   }).map(i => i.category))];
   document.getElementById('catFilter').innerHTML = ['ALL', ...cats].map(c =>
@@ -580,6 +600,7 @@ function renderItems() {
       if (!selectedKitchenId || !maps.some(m => m.supplier_id === selectedKitchenId)) return false;
     } else {
       if (!maps.some(m => { const s = allSuppliers.find(sup => sup.id === m.supplier_id); return s && s.type !== 'central_kitchen'; })) return false;
+      if (selectedSupFilter !== 'ALL' && !maps.some(m => m.supplier_id === selectedSupFilter)) return false;
     }
     if (!maps.some(m => storeSuppliers.includes(m.supplier_id)) && currentUser.role !== 'admin') return false;
     if (currentCat !== 'ALL' && item.category !== currentCat) return false;

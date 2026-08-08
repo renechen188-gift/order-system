@@ -1037,17 +1037,30 @@ async function loadHistory() {
 }
 
 // ══════════ SUPPLIER SUMMARY (Admin) ══════════
-let summaryDate = getToday();
+let sumFrom = getToday(), sumTo = getToday();
+function getMonday(d) { const dt = new Date(d + 'T00:00:00'); const day = dt.getDay(); const diff = day === 0 ? 6 : day - 1; dt.setDate(dt.getDate() - diff); return dt.toISOString().split('T')[0]; }
+function setSumRange(mode) {
+  const today = getToday();
+  if (mode === 'today') { sumFrom = sumTo = today; }
+  else if (mode === 'week') { sumFrom = getMonday(today); sumTo = today; }
+  loadSummary();
+}
 async function loadSummary() {
   const el = document.getElementById('summaryPage');
   el.innerHTML = '<div class="section-bar">廠商彙總採購單</div><div class="loading">載入中…</div>';
-  const { data: orders } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_date', summaryDate).eq('order_type', 'external').in('status', ['submitted', 'confirmed', 'received']);
+  const { data: orders } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', sumFrom).lte('order_date', sumTo).eq('order_type', 'external').in('status', ['submitted', 'confirmed', 'received']);
 
-  const datePicker = `<div style="padding:12px 16px 0;display:flex;align-items:center;gap:8px"><span style="font-size:13px;color:var(--text3)">查詢日期：</span><input type="date" value="${summaryDate}" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit" onchange="summaryDate=this.value;loadSummary()"><button style="padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);cursor:pointer;font-family:inherit" onclick="summaryDate=getToday();loadSummary()">今日</button></div>`;
+  const isRange = sumFrom !== sumTo;
+  const rangeLabel = isRange ? sumFrom + ' ~ ' + sumTo : sumFrom;
+  const datePicker = `<div style="padding:12px 16px 0;display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+    <span style="font-size:13px;color:var(--accent);font-weight:600">從</span><input type="date" value="${sumFrom}" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit" onchange="sumFrom=this.value;loadSummary()">
+    <span style="font-size:13px;color:var(--accent);font-weight:600">到</span><input type="date" value="${sumTo}" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit" onchange="sumTo=this.value;loadSummary()">
+    <button style="padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;background:var(--surface);cursor:pointer;font-family:inherit" onclick="setSumRange('today')">今日</button>
+    <button style="padding:6px 12px;border:1px solid var(--accent);border-radius:8px;font-size:13px;font-weight:600;background:var(--accent);color:#fff;cursor:pointer;font-family:inherit;border:none" onclick="setSumRange('week')">本週</button>
+  </div>`;
 
-  if (!orders?.length) { el.innerHTML = '<div class="section-bar">廠商彙總採購單</div>' + datePicker + '<div class="empty-state"><div class="icon">📋</div><div class="msg">' + summaryDate + ' 無外部叫貨單</div></div>'; return; }
+  if (!orders?.length) { el.innerHTML = '<div class="section-bar">廠商彙總採購單</div>' + datePicker + '<div class="empty-state"><div class="icon">📋</div><div class="msg">' + rangeLabel + ' 無外部叫貨單</div></div>'; return; }
 
-  // Aggregate by supplier
   const supTotals = {};
   orders.forEach(order => {
     (order.order_items || []).forEach(oi => {
@@ -1058,14 +1071,13 @@ async function loadSummary() {
       const key = item?.id || oi.item_id;
       if (!supTotals[supName].items[key]) supTotals[supName].items[key] = { name: item?.name || '', unit: item?.unit || '', total: 0, stores: [] };
       supTotals[supName].items[key].total += oi.ordered_qty;
-      supTotals[supName].items[key].stores.push({ store: order.stores?.name || '', qty: oi.ordered_qty });
+      supTotals[supName].items[key].stores.push({ store: order.stores?.name || '', qty: oi.ordered_qty, date: order.order_date });
     });
   });
 
-  let html = '<div class="section-bar">廠商彙總採購單（' + summaryDate + '）</div>' + datePicker;
+  let html = '<div class="section-bar">廠商彙總採購單（' + rangeLabel + '）</div>' + datePicker;
   for (const [supName, data] of Object.entries(supTotals)) {
     const itemList = Object.values(data.items);
-    // Build copy text grouped by store
     const storeGroups = {};
     itemList.forEach(it => {
       it.stores.forEach(s => {
@@ -1073,7 +1085,7 @@ async function loadSummary() {
         storeGroups[s.store].push({ name: it.name, qty: s.qty, unit: it.unit });
       });
     });
-    let copyText = `📋 麻媽家·涼三伯 採購單\n📅 ${summaryDate}\n\n${supName} 您好，以下為今日訂單：\n`;
+    let copyText = `📋 麻媽家·涼三伯 採購單\n📅 ${rangeLabel}\n\n${supName} 您好，以下為訂單：\n`;
     const brandStores = { '🔴 麻媽家': [], '🔵 涼三伯': [] };
     for (const [store, sItems] of Object.entries(storeGroups)) {
       const brand = store.startsWith('涼三伯') ? '🔵 涼三伯' : '🔴 麻媽家';

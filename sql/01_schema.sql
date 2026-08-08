@@ -394,6 +394,8 @@ CREATE POLICY "oi_store_insert" ON inventory.order_items FOR INSERT WITH CHECK (
   order_id IN (SELECT id FROM inventory.orders WHERE store_id = inventory.get_user_store_id()));
 CREATE POLICY "oi_store_update" ON inventory.order_items FOR UPDATE USING (
   order_id IN (SELECT id FROM inventory.orders WHERE store_id = inventory.get_user_store_id()));
+CREATE POLICY "oi_store_delete" ON inventory.order_items FOR DELETE USING (
+  order_id IN (SELECT id FROM inventory.orders WHERE store_id = inventory.get_user_store_id()));
 
 -- purchase_summaries: 僅管理者
 CREATE POLICY "ps_admin" ON inventory.purchase_summaries FOR ALL USING (inventory.get_user_role() = 'admin');

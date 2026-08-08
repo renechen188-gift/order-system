@@ -1507,8 +1507,9 @@ async function copyOrder(orderId) {
 
 async function deleteOrderItem(oiId, orderId) {
   if (!confirm('確定刪除此品項？')) return;
-  const { error } = await sb.from('order_items').delete().eq('id', oiId);
+  const { data: deleted, error } = await sb.from('order_items').delete().eq('id', oiId).select();
   if (error) { alert('刪除失敗：' + error.message); return; }
+  if (!deleted?.length) { alert('刪除失敗：權限不足，請聯繫管理者'); return; }
   const row = document.getElementById('oi_' + oiId);
   if (row) row.remove();
   const { data: remaining } = await sb.from('order_items').select('id').eq('order_id', orderId);
@@ -1564,7 +1565,8 @@ async function saveOrderEdits(orderId) {
       if (error) throw error;
     }
     for (const id of deletes) {
-      await sb.from('order_items').delete().eq('id', id);
+      const { data: del } = await sb.from('order_items').delete().eq('id', id).select();
+      if (!del?.length) throw new Error('刪除品項失敗：權限不足');
     }
     const { data: remaining } = await sb.from('order_items').select('id').eq('order_id', orderId);
     if (!remaining?.length) {

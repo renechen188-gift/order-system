@@ -1445,6 +1445,7 @@ async function showOrderDetail(orderId) {
                 ${canEdit ? `<input type="number" class="edit-qty-input" data-oiid="${oi.id}" value="${oi.ordered_qty}" inputmode="decimal" style="width:50px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-weight:600;text-align:center;font-family:inherit" onfocus="this.select()">` : `<span style="color:var(--text2)">叫 ${oi.ordered_qty}</span>`}
                 <span style="color:var(--text3)">${item?.unit || ''}</span>
                 ${received ? `<span style="margin-left:4px;color:${isShort ? 'var(--red)' : 'var(--green)'};font-weight:600">收 ${oi.received_qty}</span>` : ''}
+                ${received && isAdminOrOps ? `<button onclick="editReceivedQty('${oi.id}','${order.id}','${item?.id || ''}',${oi.received_qty})" style="width:24px;height:24px;border:none;background:none;color:var(--accent);font-size:14px;cursor:pointer;padding:0" title="修改收貨數">✏️</button>` : ''}
                 ${canEdit && !received ? `<button onclick="deleteOrderItem('${oi.id}','${order.id}')" style="width:24px;height:24px;border:none;background:none;color:var(--red);font-size:16px;cursor:pointer;padding:0">✕</button>` : ''}
               </div>
             </div>`;
@@ -1512,6 +1513,26 @@ async function deleteOrderItem(oiId, orderId) {
   if (currentTab === 'receive') loadReceive();
   if (currentTab === 'summary') loadSummary();
   if (currentTab === 'kitchenSummary') loadKitchenSummary();
+}
+
+async function editReceivedQty(oiId, orderId, itemId, oldQty) {
+  const newQty = prompt(`目前收貨數：${oldQty}\n請輸入正確的收貨數量：`, oldQty);
+  if (newQty === null) return;
+  const nq = parseFloat(newQty);
+  if (isNaN(nq) || nq < 0) { alert('請輸入有效數量'); return; }
+  if (nq === oldQty) return;
+  const { data: order } = await sb.from('orders').select('store_id').eq('id', orderId).single();
+  if (!order) { alert('找不到訂單'); return; }
+  await sb.from('order_items').update({ received_qty: nq, received_at: new Date().toISOString() }).eq('id', oiId);
+  const { data: oldLedger } = await sb.from('stock_ledger').select('id, qty').eq('ref_type', 'order_item').eq('ref_id', oiId);
+  const oldTotal = (oldLedger || []).reduce((s, r) => s + r.qty, 0);
+  const diff = nq - oldTotal;
+  if (diff !== 0) {
+    await sb.from('stock_ledger').insert({ store_id: order.store_id, item_id: itemId, qty: diff, type: 'adjust', ref_type: 'rcv_edit', ref_id: oiId });
+  }
+  showOrderDetail(orderId);
+  if (currentTab === 'receive') loadReceive();
+  showModal('✅', '收貨數已修正', `${oldQty} → ${nq}，庫存已同步調整`);
 }
 
 async function saveOrderEdits(orderId) {

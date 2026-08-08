@@ -863,7 +863,11 @@ async function confirmReceive(btn, orderId) {
       const alreadyDone = row?.classList?.contains('done');
       const rq = parseFloat(inp.value) || 0;
       const oiid = inp.dataset.oiid;
-      await sb.from('order_items').update({ received_qty: rq, status: rq < parseFloat(inp.dataset.exp) ? 'short' : 'received', received_by: currentUser.id, received_at: new Date().toISOString() }).eq('id', oiid);
+      const prev = parseFloat(inp.dataset.prev) || 0;
+      const ordered = parseFloat(inp.dataset.ordered) || 0;
+      const totalRcv = prev + rq;
+      const fulfilled = totalRcv >= ordered;
+      await sb.from('order_items').update({ received_qty: totalRcv, status: fulfilled ? 'received' : 'short', received_by: currentUser.id, received_at: new Date().toISOString() }).eq('id', oiid);
       if (rq > 0 && !alreadyDone) rcvItems.push({ oiid, qty: rq });
     }
     for (const inp of card.querySelectorAll('.rcv-price-input')) {
@@ -877,7 +881,11 @@ async function confirmReceive(btn, orderId) {
         await sb.from('price_reviews').insert({ item_id: itemId, supplier_id: maps[0]?.supplier_id, store_id: currentUser.store_id, reported_by: currentUser.id, old_price: sys, new_price: nw, status: 'pending' });
       }
     }
-    await sb.from('orders').update({ status: 'received', updated_at: new Date().toISOString() }).eq('id', orderId);
+    const { data: allOi } = await sb.from('order_items').select('status').eq('order_id', orderId);
+    const allDone = allOi?.every(oi => oi.status === 'received' || oi.status === 'short');
+    if (allDone) {
+      await sb.from('orders').update({ status: 'received', updated_at: new Date().toISOString() }).eq('id', orderId);
+    }
 
     if (rcvItems.length) {
       const { data: order } = await sb.from('orders').select('store_id, order_items(id, item_id)').eq('id', orderId).single();

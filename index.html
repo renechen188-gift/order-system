@@ -1173,7 +1173,7 @@ async function loadKitchenSummary(date) {
       if (!storeMap[s.store]) storeMap[s.store] = [];
       storeMap[s.store].push(`  ${it.name} ${s.qty}${it.unit}`);
     }));
-    let catCopy = `🍳 央廚出貨單【${cat}】\n📅 ${ksDate}\n`;
+    let catCopy = `🍳 央廚叫貨單【${cat}】\n📅 ${ksDate}\n`;
     const brandStores = { '🔴 麻媽家': [], '🔵 涼三伯': [] };
     for (const [store, lines] of Object.entries(storeMap)) {
       const brand = store.startsWith('涼三伯') ? '🔵 涼三伯' : '🔴 麻媽家';

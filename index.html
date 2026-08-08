@@ -1536,24 +1536,39 @@ async function editReceivedQty(oiId, orderId, itemId, oldQty) {
 }
 
 async function saveOrderEdits(orderId) {
-  const inputs = document.querySelectorAll('.edit-qty-input');
+  const overlay = document.getElementById('formOverlay');
+  if (!overlay) return;
+  const inputs = overlay.querySelectorAll('.edit-qty-input');
   const updates = [];
+  const deletes = [];
   inputs.forEach(inp => {
     const qty = parseFloat(inp.value) || 0;
-    if (qty > 0) updates.push({ id: inp.dataset.oiid, qty });
+    const oiid = inp.dataset.oiid;
+    if (qty > 0) updates.push({ id: oiid, qty });
+    else deletes.push(oiid);
   });
-  if (!updates.length) { alert('數量不可全部為 0'); return; }
-  const btn = document.querySelector('.form-save');
+  if (!updates.length && deletes.length === inputs.length) { alert('數量不可全部為 0'); return; }
+  const btn = overlay.querySelector('.form-save');
   btn.disabled = true; btn.textContent = '儲存中…';
-  for (const u of updates) {
-    await sb.from('order_items').update({ ordered_qty: u.qty }).eq('id', u.id);
-  }
-  document.getElementById('formOverlay')?.remove();
-  if (currentTab === 'history') loadHistory();
-  if (currentTab === 'receive') loadReceive();
-  if (currentTab === 'summary') loadSummary();
-  if (currentTab === 'kitchenSummary') loadKitchenSummary();
-  showModal('✅', '訂單已修改', `已更新 ${updates.length} 項品項數量`);
+  try {
+    for (const u of updates) {
+      const { error } = await sb.from('order_items').update({ ordered_qty: u.qty }).eq('id', u.id);
+      if (error) throw error;
+    }
+    for (const id of deletes) {
+      await sb.from('order_items').delete().eq('id', id);
+    }
+    const { data: remaining } = await sb.from('order_items').select('id').eq('order_id', orderId);
+    if (!remaining?.length) {
+      await sb.from('orders').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', orderId);
+    }
+    overlay.remove();
+    if (currentTab === 'history') loadHistory();
+    if (currentTab === 'receive') loadReceive();
+    if (currentTab === 'summary') loadSummary();
+    if (currentTab === 'kitchenSummary') loadKitchenSummary();
+    showModal('✅', '訂單已修改', `已更新 ${updates.length} 項${deletes.length ? '，刪除 ' + deletes.length + ' 項' : ''}`);
+  } catch (err) { alert('儲存失敗：' + err.message); btn.disabled = false; btn.textContent = '💾 儲存修改'; }
 }
 
 async function cancelOrder(orderId, btn) {

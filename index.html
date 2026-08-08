@@ -572,13 +572,15 @@ function renderSupFilter() {
   ).join('')}</div>`;
 }
 
+const CAT_MERGE = { '主食':'主食/包材/調料/飲品', '包材':'主食/包材/調料/飲品', '調料':'主食/包材/調料/飲品', '飲品':'主食/包材/調料/飲品', '小菜':'小菜/肉品/蛋品/蔬菜', '肉品':'小菜/肉品/蛋品/蔬菜', '蛋品':'小菜/肉品/蛋品/蔬菜', '蔬菜':'小菜/肉品/蛋品/蔬菜' };
+function getMergedCat(cat) { return CAT_MERGE[cat] || cat; }
 function renderCats() {
   const cats = [...new Set(allItems.filter(i => {
     const maps = itemSupplierMap[i.id] || [];
     if (orderType === 'internal') return maps.some(m => m.supplier_id === selectedKitchenId);
     if (selectedSupFilter !== 'ALL' && !maps.some(m => m.supplier_id === selectedSupFilter)) return false;
     return maps.some(m => { const s = allSuppliers.find(sup => sup.id === m.supplier_id); return s && s.type !== 'central_kitchen'; });
-  }).map(i => i.category))];
+  }).map(i => getMergedCat(i.category)))];
   document.getElementById('catFilter').innerHTML = ['ALL', ...cats].map(c =>
     `<button class="cat-btn ${currentCat === c ? 'active' : ''}" onclick="currentCat='${c}';renderCats();renderItems()">${c === 'ALL' ? '品項分類' : c}</button>`
   ).join('');
@@ -603,7 +605,7 @@ function renderItems() {
       if (selectedSupFilter !== 'ALL' && !maps.some(m => m.supplier_id === selectedSupFilter)) return false;
     }
     if (!maps.some(m => storeSuppliers.includes(m.supplier_id)) && currentUser.role !== 'admin') return false;
-    if (currentCat !== 'ALL' && item.category !== currentCat) return false;
+    if (currentCat !== 'ALL' && getMergedCat(item.category) !== currentCat) return false;
     if (q && !item.name.toLowerCase().includes(q)) return false;
     return true;
   });

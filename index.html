@@ -1490,8 +1490,8 @@ async function deleteOrderItem(oiId, orderId) {
   if (error) { alert('刪除失敗：' + error.message); return; }
   const row = document.getElementById('oi_' + oiId);
   if (row) row.remove();
-  const { data: remaining } = await sb.from('order_items').select('id', { count: 'exact', head: true }).eq('order_id', orderId);
-  if (remaining === 0) {
+  const { data: remaining } = await sb.from('order_items').select('id').eq('order_id', orderId);
+  if (!remaining?.length) {
     await sb.from('orders').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', orderId);
     document.getElementById('formOverlay')?.remove();
     showModal('🗑️', '訂單已自動取消', '所有品項已刪除');

@@ -1335,7 +1335,7 @@ async function loadFulfill() {
     }
     html += `<div style="padding:4px 16px 12px"><button class="card-btn btn-purple" data-date="${date}" style="width:100%;padding:12px;border-radius:10px;font-size:15px;font-weight:700;border:none;color:#fff;background:var(--purple);cursor:pointer" onclick="fulfillDay(this,'${date}')">確認 ${date} 出貨</button></div>`;
   }
-  html = `<div class="section-bar">待出貨（${sortedDates.length} 天，${totalPending} 項待出）</div>` + html;
+  html = `<div class="section-bar">待出貨（${sortedDates.length} 天，${totalPending} 項待出）</div>` + picker + html;
   el.innerHTML = html;
 }
 

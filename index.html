@@ -406,7 +406,7 @@ async function initApp() {
   document.getElementById('appRoot').style.display = 'block';
 
   const isKitchen = currentUser.role === 'kitchen' || currentUser.role === 'kitchen_fulfill' || currentUser.role === 'kitchen_order';
-  const roleLabel = { admin: '管理者', store_manager: currentUser.stores?.name || '門店', kitchen: currentUser.stores?.name || '央廚', kitchen_fulfill: '央廚·出貨', kitchen_order: '央廚·進貨', ops: '營運' };
+  const roleLabel = { admin: '管理者', store_manager: currentUser.stores?.name || '門店', kitchen: currentUser.stores?.name || '央廚', kitchen_fulfill: currentUser.assigned_cats?.length ? '央廚·' + currentUser.assigned_cats.slice(0, 2).join('/') : '央廚·出貨', kitchen_order: '央廚·進貨', ops: '營運' };
   document.getElementById('userLabel').textContent = roleLabel[currentUser.role] || currentUser.role;
 
   if (isKitchen) {
@@ -1148,10 +1148,13 @@ async function loadKitchenSummary(date) {
   if (!orders?.length) { el.innerHTML = '<div class="section-bar">央廚叫貨彙總</div>' + picker + `<div class="empty-state"><div class="icon">📋</div><div class="msg">${ksDate} 無央廚叫貨單</div></div>`; return; }
 
   const catItems = {};
+  const myCats = currentUser.assigned_cats;
   orders.forEach(order => {
     (order.order_items || []).forEach(oi => {
       const item = oi.items;
-      const cat = getMergedCat(item?.category || '其他');
+      const rawCat = item?.category || '其他';
+      if (myCats?.length && !myCats.includes(rawCat)) return;
+      const cat = getMergedCat(rawCat);
       const key = item?.id || oi.item_id;
       if (!catItems[cat]) catItems[cat] = {};
       if (!catItems[cat][key]) catItems[cat][key] = { name: item?.name || '', unit: item?.unit || '', total: 0, stores: [] };
@@ -1283,10 +1286,12 @@ async function loadFulfill() {
     const dayOrders = dateGroups[date];
     const catItems = {};
     const dayOrderIds = new Set();
+    const myCats = currentUser.assigned_cats;
     dayOrders.forEach(order => {
       (order.order_items || []).filter(oi => oi.status !== 'fulfilled').forEach(oi => {
         const item = oi.items;
         const cat = item?.category || '其他';
+        if (myCats?.length && !myCats.includes(cat)) return;
         const key = item?.id + '_' + date;
         if (!catItems[cat]) catItems[cat] = {};
         if (!catItems[cat][key]) catItems[cat][key] = { name: item?.name || '', unit: item?.unit || '', itemId: item?.id, totalOrdered: 0, stores: [] };

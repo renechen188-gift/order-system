@@ -1261,14 +1261,26 @@ async function reviewPrice(id, status) {
 }
 
 // ══════════ FULFILL (Kitchen) ══════════
+let fulFrom = getToday(), fulTo = getToday();
+function setFulRange(mode) {
+  const today = getToday();
+  if (mode === 'today') { fulFrom = today; fulTo = today; }
+  else if (mode === 'week') { fulFrom = getMonday(today); fulTo = today; }
+  else if (mode === 'all') { fulFrom = ''; fulTo = ''; }
+  loadFulfill();
+}
 async function loadFulfill() {
   const el = document.getElementById('fulfillPage');
-  el.innerHTML = '<div class="section-bar">待出貨訂單</div><div class="loading">載入中…</div>';
+  const today = getToday();
+  const picker = `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 16px"><span style="font-size:13px;color:var(--accent);font-weight:600">日期：</span><input type="date" value="${fulFrom}" onchange="fulFrom=this.value;loadFulfill()" style="padding:5px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit"><span style="font-size:13px;color:var(--text3)">～</span><input type="date" value="${fulTo}" onchange="fulTo=this.value;loadFulfill()" style="padding:5px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit"><button onclick="setFulRange('today')" style="padding:5px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;background:${fulFrom===today&&fulTo===today?'var(--accent)':'var(--surface)'};color:${fulFrom===today&&fulTo===today?'#fff':'var(--text)'};cursor:pointer;font-family:inherit">今日</button><button onclick="setFulRange('week')" style="padding:5px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;background:${fulFrom===getMonday(today)&&fulTo===today?'var(--accent)':'var(--surface)'};color:${fulFrom===getMonday(today)&&fulTo===today?'#fff':'var(--text)'};cursor:pointer;font-family:inherit">本週</button><button onclick="setFulRange('all')" style="padding:5px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;background:${!fulFrom&&!fulTo?'var(--accent)':'var(--surface)'};color:${!fulFrom&&!fulTo?'#fff':'var(--text)'};cursor:pointer;font-family:inherit">全部</button></div>`;
+  el.innerHTML = '<div class="section-bar">待出貨訂單</div>' + picker + '<div class="loading">載入中…</div>';
   let fq = sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_type', 'internal').in('status', ['submitted', 'confirmed']).order('order_date', { ascending: false });
+  if (fulFrom) fq = fq.gte('order_date', fulFrom);
+  if (fulTo) fq = fq.lte('order_date', fulTo);
   if (currentUser.store_id) fq = fq.neq('store_id', currentUser.store_id);
   const { data: orders } = await fq;
 
-  if (!orders?.length) { el.innerHTML = '<div class="section-bar">各店叫貨彙總</div><div class="empty-state"><div class="icon">📦</div><div class="msg">目前沒有待出貨訂單</div></div>'; return; }
+  if (!orders?.length) { el.innerHTML = '<div class="section-bar">待出貨訂單</div>' + picker + '<div class="empty-state"><div class="icon">📦</div><div class="msg">此區間無待出貨訂單</div></div>'; return; }
 
   const sn = s => s.replace('麻媽家','').replace('涼三伯','');
   const dateGroups = {};

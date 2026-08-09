@@ -406,7 +406,7 @@ async function initApp() {
   document.getElementById('appRoot').style.display = 'block';
 
   const isKitchen = currentUser.role === 'kitchen' || currentUser.role === 'kitchen_fulfill' || currentUser.role === 'kitchen_order';
-  const roleLabel = { admin: '管理者', store_manager: currentUser.stores?.name || '門店', kitchen: currentUser.stores?.name || '央廚', kitchen_fulfill: currentUser.assigned_cats?.length ? '央廚·' + currentUser.assigned_cats.slice(0, 2).join('/') : '央廚·出貨', kitchen_order: '央廚·進貨', ops: '營運' };
+  const roleLabel = { admin: '管理者', store_manager: currentUser.stores?.name || '門店', kitchen: currentUser.stores?.name || '央廚', kitchen_fulfill: currentUser.assigned_cats?.length ? '央廚·' + currentUser.assigned_cats.join('/') : '央廚·出貨', kitchen_order: '央廚·進貨', ops: '營運' };
   document.getElementById('userLabel').textContent = roleLabel[currentUser.role] || currentUser.role;
 
   if (isKitchen) {

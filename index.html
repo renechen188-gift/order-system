@@ -1074,7 +1074,9 @@ async function loadSummary() {
   const supTotals = {};
   orders.forEach(order => {
     (order.order_items || []).forEach(oi => {
-      const supName = getSupplierName(oi.supplier_id) || '未指定';
+      const sup = allSuppliers.find(s => s.id === oi.supplier_id);
+      if (sup?.type === 'central_kitchen') return;
+      const supName = sup?.name || '未指定';
       const supId = oi.supplier_id;
       if (!supTotals[supName]) supTotals[supName] = { items: {}, supId };
       const item = oi.items;

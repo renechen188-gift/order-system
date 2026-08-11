@@ -810,7 +810,9 @@ async function confirmOneItem(btn, oiId, orderId) {
   const totalRcv = prev + rq;
   const fulfilled = totalRcv >= ordered;
   try {
-    await sb.from('order_items').update({ received_qty: totalRcv, status: fulfilled ? 'received' : 'short', received_by: currentUser.id, received_at: new Date().toISOString() }).eq('id', oiId);
+    const { data: updOi, error: updErr } = await sb.from('order_items').update({ received_qty: totalRcv, status: fulfilled ? 'received' : 'short', received_by: currentUser.id, received_at: new Date().toISOString() }).eq('id', oiId).select();
+    if (updErr) throw new Error('更新收貨狀態失敗：' + updErr.message);
+    if (!updOi?.length) throw new Error('更新收貨狀態失敗：權限不足');
     const priceInp = row.querySelector('.rcv-price-input');
     if (priceInp) {
       const sysStr = priceInp.dataset.sys;
@@ -869,7 +871,9 @@ async function confirmReceive(btn, orderId) {
       const ordered = parseFloat(inp.dataset.ordered) || 0;
       const totalRcv = prev + rq;
       const fulfilled = totalRcv >= ordered;
-      await sb.from('order_items').update({ received_qty: totalRcv, status: fulfilled ? 'received' : 'short', received_by: currentUser.id, received_at: new Date().toISOString() }).eq('id', oiid);
+      const { data: updOi, error: updErr } = await sb.from('order_items').update({ received_qty: totalRcv, status: fulfilled ? 'received' : 'short', received_by: currentUser.id, received_at: new Date().toISOString() }).eq('id', oiid).select();
+      if (updErr) throw new Error('更新收貨狀態失敗：' + updErr.message);
+      if (!updOi?.length) throw new Error('更新收貨狀態失敗：權限不足');
       if (rq > 0 && !alreadyDone) rcvItems.push({ oiid, qty: rq });
     }
     for (const inp of card.querySelectorAll('.rcv-price-input')) {

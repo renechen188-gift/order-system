@@ -813,8 +813,6 @@ async function confirmOneItem(btn, oiId, orderId) {
     const { data: updOi, error: updErr } = await sb.from('order_items').update({ received_qty: totalRcv, status: fulfilled ? 'received' : 'short', received_by: currentUser.id, received_at: new Date().toISOString() }).eq('id', oiId).select();
     if (updErr) throw new Error('更新收貨狀態失敗：' + updErr.message);
     if (!updOi?.length) throw new Error('更新收貨狀態失敗：權限不足');
-    const verify = await sb.from('order_items').select('id,status,received_qty').eq('id', oiId).single();
-    alert('[DEBUG] update回傳: ' + JSON.stringify(updOi[0]?.status) + ' / 重新查詢: ' + JSON.stringify(verify.data?.status));
     const priceInp = row.querySelector('.rcv-price-input');
     if (priceInp) {
       const sysStr = priceInp.dataset.sys;

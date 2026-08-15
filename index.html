@@ -1142,17 +1142,26 @@ function copyToClipboard(id) {
 }
 
 // ══════════ KITCHEN SUMMARY (Admin) ══════════
-let ksDate = '';
-async function loadKitchenSummary(date) {
-  const el = document.getElementById('kitchenSummaryPage');
+let ksFrom = getToday(), ksTo = getToday();
+function setKsRange(mode) {
   const today = getToday();
-  if (date) ksDate = date; else if (!ksDate) ksDate = today;
-  const picker = `<div style="display:flex;align-items:center;gap:10px;padding:12px 16px"><span style="font-size:13px;color:var(--accent);font-weight:600">查詢日期：</span><input type="date" value="${ksDate}" onchange="loadKitchenSummary(this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit"><button onclick="loadKitchenSummary('${today}')" style="padding:6px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;background:var(--surface);cursor:pointer;font-family:inherit">今日</button></div>`;
+  if (mode === 'today') { ksFrom = ksTo = today; }
+  else if (mode === 'week') { ksFrom = getMonday(today); ksTo = today; }
+  loadKitchenSummary();
+}
+async function loadKitchenSummary() {
+  const el = document.getElementById('kitchenSummaryPage');
+  const picker = `<div style="padding:12px 16px 0;display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+    <span style="font-size:13px;color:var(--accent);font-weight:600">從</span><input type="date" value="${ksFrom}" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit" onchange="ksFrom=this.value;loadKitchenSummary()">
+    <span style="font-size:13px;color:var(--accent);font-weight:600">到</span><input type="date" value="${ksTo}" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit" onchange="ksTo=this.value;loadKitchenSummary()">
+    <button style="padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;background:var(--surface);cursor:pointer;font-family:inherit" onclick="setKsRange('today')">今日</button>
+    <button style="padding:6px 12px;border:1px solid var(--accent);border-radius:8px;font-size:13px;font-weight:600;background:var(--accent);color:#fff;cursor:pointer;font-family:inherit;border:none" onclick="setKsRange('week')">本週</button>
+  </div>`;
   el.innerHTML = '<div class="section-bar">央廚叫貨彙總</div>' + picker + '<div class="loading">載入中…</div>';
   const kitchenSupIds = new Set(allSuppliers.filter(s => s.type === 'central_kitchen').map(s => s.id));
   const [{ data: intOrders }, { data: extOrders }] = await Promise.all([
-    sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_date', ksDate).eq('order_type', 'internal').in('status', ['submitted', 'confirmed', 'received']),
-    sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('order_date', ksDate).eq('order_type', 'external').in('status', ['submitted', 'confirmed', 'received'])
+    sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', ksFrom).lte('order_date', ksTo).eq('order_type', 'internal').in('status', ['submitted', 'confirmed', 'received']),
+    sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', ksFrom).lte('order_date', ksTo).eq('order_type', 'external').in('status', ['submitted', 'confirmed', 'received'])
   ]);
   const orders = [...(intOrders || [])];
   (extOrders || []).forEach(o => {
@@ -1160,7 +1169,7 @@ async function loadKitchenSummary(date) {
     if (kitchenItems.length) orders.push({ ...o, order_items: kitchenItems });
   });
 
-  if (!orders?.length) { el.innerHTML = '<div class="section-bar">央廚叫貨彙總</div>' + picker + `<div class="empty-state"><div class="icon">📋</div><div class="msg">${ksDate} 無央廚叫貨單</div></div>`; return; }
+  if (!orders?.length) { el.innerHTML = '<div class="section-bar">央廚叫貨彙總</div>' + picker + `<div class="empty-state"><div class="icon">📋</div><div class="msg">${ksFrom === ksTo ? ksFrom : ksFrom + ' ~ ' + ksTo} 無央廚叫貨單</div></div>`; return; }
 
   const catItems = {};
   const myCats = currentUser.assigned_cats;

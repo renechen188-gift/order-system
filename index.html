@@ -100,6 +100,7 @@
   .card-status{font-size:12px;padding:3px 10px;border-radius:12px;font-weight:600;flex-shrink:0}
   .status-pending{background:var(--yellow-bg);color:var(--yellow)}
   .status-done{background:var(--green-bg);color:var(--green)}
+  .status-cancel{background:#fde8e8;color:#dc2626}
   .status-preparing{background:var(--purple-bg);color:var(--purple)}
 
   .card-row{display:flex;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);gap:10px}
@@ -1046,7 +1047,7 @@ async function loadHistory() {
 
   const sm = { draft:'草稿', submitted:'已送出', confirmed:'已確認', received:'已收貨', cancelled:'已取消' };
   el.innerHTML = '<div class="section-bar">叫貨紀錄</div>' + filterHtml + (orders?.length ? orders.map(o =>
-    `<div class="history-item" onclick="showOrderDetail('${o.id}')" style="cursor:pointer"><div class="hi-top"><span class="hi-date">${o.order_date}</span><span class="hi-status ${o.status === 'received' ? 'status-done' : 'status-pending'}">${sm[o.status] || o.status}</span></div><div class="hi-detail">${o.order_type === 'internal' ? '🏭 央廚' : '🏪 外部廠商'} · ${o.order_items?.[0]?.count || 0} 項${o.stores ? ' · ' + o.stores.name : ''}<span style="float:right;color:var(--text3)">›</span></div></div>`
+    `<div class="history-item" onclick="showOrderDetail('${o.id}')" style="cursor:pointer"><div class="hi-top"><span class="hi-date">${o.order_date}</span><span class="hi-status ${o.status === 'received' ? 'status-done' : o.status === 'cancelled' ? 'status-cancel' : 'status-pending'}">${sm[o.status] || o.status}</span></div><div class="hi-detail">${o.order_type === 'internal' ? '🏭 央廚' : '🏪 外部廠商'} · ${o.order_items?.[0]?.count || 0} 項${o.stores ? ' · ' + o.stores.name : ''}<span style="float:right;color:var(--text3)">›</span></div></div>`
   ).join('') : '<div class="empty-state"><div class="icon">📋</div><div class="msg">此月份無叫貨紀錄</div></div>');
 }
 
@@ -1109,7 +1110,7 @@ async function loadSummary() {
     }
     for (const [brand, stores] of Object.entries(brandStores)) {
       if (!stores.length) continue;
-      copyText += `\n━━ ${brand} ━━\n`;
+      copyText += `\n${brand}\n`;
       stores.forEach(({ store, sItems }) => {
         const shortName = store.replace('麻媽家','').replace('涼三伯','');
         copyText += `\n📍 ${shortName}：\n`;
@@ -1209,7 +1210,7 @@ async function loadKitchenSummary() {
     }
     for (const [brand, stores] of Object.entries(brandStores)) {
       if (!stores.length) continue;
-      catCopy += `\n━━ ${brand} ━━\n`;
+      catCopy += `\n${brand}\n`;
       stores.forEach(({ store, lines }) => { catCopy += `\n📍 ${sn(store)}：\n${lines.join('\n')}\n`; });
     }
 
@@ -1474,7 +1475,7 @@ async function showOrderDetail(orderId) {
         <button class="form-close" onclick="document.getElementById('formOverlay').remove()">✕</button>
       </div>
       <div style="padding:0 20px 8px;display:flex;gap:8px;align-items:center">
-        <span class="card-status ${order.status === 'received' ? 'status-done' : 'status-pending'}">${sm[order.status] || order.status}</span>
+        <span class="card-status ${order.status === 'received' ? 'status-done' : order.status === 'cancelled' ? 'status-cancel' : 'status-pending'}">${sm[order.status] || order.status}</span>
         <span style="font-size:13px;color:var(--text2)">${order.stores?.name || ''}</span>
         <span style="font-size:13px;color:var(--text3)">${order.order_type === 'internal' ? '央廚' : '外部廠商'}</span>
       </div>

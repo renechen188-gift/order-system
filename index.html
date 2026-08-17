@@ -1264,8 +1264,8 @@ async function loadKitchenSummary() {
     for (const it of il) {
       html += `<div class="card-row"><div class="cr-info"><div class="cr-name">${it.name}</div><div class="cr-sub">${it.stores.map(s => { const isCool = s.store.startsWith('涼三伯'); return `<span class="fulfill-store" style="border-color:${isCool ? '#3b82f6' : '#ef4444'}40;color:${isCool ? '#3b82f6' : '#ef4444'}">${sn(s.store)} ${s.qty}</span>`; }).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--purple);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
     }
-    const kitSupIdStr = [...kitchenSupIds].map(id => `'${id}'`).join(',');
-    html += `<div class="copy-text" id="${copyId}">${catCopy}</div><button class="copy-btn" onclick="copyToClipboard('${copyId}',[${kitSupIdStr}])">📋 複製【${cat}】</button></div>`;
+    const catKeys = [...kitchenSupIds].map(id => `'${id}:${cat}'`).join(',');
+    html += `<div class="copy-text" id="${copyId}">${catCopy}</div><button class="copy-btn" onclick="copyToClipboard('${copyId}',[${catKeys}])">📋 複製【${cat}】</button></div>`;
   }
   el.innerHTML = html;
 }
@@ -3080,12 +3080,31 @@ async function loadDashboard() {
   const noOrderStores = activeStores.filter(s => !storeOrderMap[s.id]);
   const todaySentKey = 'dash_sent_' + today;
   const sentSuppliers = JSON.parse(localStorage.getItem(todaySentKey) || '[]');
-  const pendingSuppliers = Object.keys(supplierOrderMap)
-    .filter(sid => !sentSuppliers.includes(sid))
+  const kitchenCatMap = {};
+  (todayOrders || []).forEach(o => {
+    (o.order_items || []).forEach(oi => {
+      const item = oi.items;
+      if (!item || !oi.supplier_id) return;
+      const sup = allSuppliers.find(s => s.id === oi.supplier_id);
+      if (sup?.type === 'central_kitchen') {
+        const cat = getMergedCat(item.category || '其他');
+        const key = oi.supplier_id + ':' + cat;
+        if (!kitchenCatMap[key]) kitchenCatMap[key] = { id: key, supId: oi.supplier_id, name: '央廚·' + cat, count: 0 };
+        kitchenCatMap[key].count++;
+      }
+    });
+  });
+
+  const externalSuppliers = Object.keys(supplierOrderMap)
     .map(sid => {
       const sup = allSuppliers.find(s => s.id === sid);
-      return sup ? { id: sid, name: sup.name, type: sup.type, count: supplierOrderMap[sid] } : null;
+      return sup && sup.type !== 'central_kitchen' ? { id: sid, name: sup.name, count: supplierOrderMap[sid] } : null;
     }).filter(Boolean);
+
+  const pendingSuppliers = [
+    ...externalSuppliers.filter(s => !sentSuppliers.includes(s.id)),
+    ...Object.values(kitchenCatMap).filter(s => !sentSuppliers.includes(s.id))
+  ];
 
   let html = '<div class="section-bar">總覽</div>';
 

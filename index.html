@@ -3049,6 +3049,7 @@ async function loadDashboard() {
   ]);
 
   const storeOrderMap = {};
+  const supplierOrderMap = {};
   (todayOrders || []).forEach(o => {
     if (!storeOrderMap[o.store_id]) storeOrderMap[o.store_id] = { count: 0, items: [] };
     storeOrderMap[o.store_id].count++;
@@ -3058,12 +3059,45 @@ async function loadDashboard() {
       const existing = storeOrderMap[o.store_id].items.find(x => x.id === item.id);
       if (existing) { existing.qty += oi.ordered_qty; }
       else { storeOrderMap[o.store_id].items.push({ id: item.id, name: item.name, qty: oi.ordered_qty, unit: item.unit || '' }); }
+      if (oi.supplier_id) {
+        if (!supplierOrderMap[oi.supplier_id]) supplierOrderMap[oi.supplier_id] = 0;
+        supplierOrderMap[oi.supplier_id]++;
+      }
     });
   });
 
   const activeStores = allStores.filter(s => s.is_active && s.type === 'store');
+  const noOrderStores = activeStores.filter(s => !storeOrderMap[s.id]);
+  const todaySentKey = 'dash_sent_' + today;
+  const sentSuppliers = JSON.parse(localStorage.getItem(todaySentKey) || '[]');
+  const pendingSuppliers = Object.keys(supplierOrderMap)
+    .filter(sid => !sentSuppliers.includes(sid))
+    .map(sid => {
+      const sup = allSuppliers.find(s => s.id === sid);
+      return sup ? { id: sid, name: sup.name, type: sup.type, count: supplierOrderMap[sid] } : null;
+    }).filter(Boolean).filter(s => s.type !== 'central_kitchen');
 
   let html = '<div class="section-bar">總覽</div>';
+
+  if (noOrderStores.length) {
+    html += `<div style="margin:8px 16px;padding:10px 14px;background:#fef3cd;border:1px solid #ffc107;border-radius:10px">
+      <div style="font-size:13px;font-weight:600;color:#856404;margin-bottom:4px">⚠️ 尚未叫貨</div>
+      <div style="font-size:13px;color:#856404">${noOrderStores.map(s => s.name).join('、')}</div>
+    </div>`;
+  }
+
+  if (pendingSuppliers.length) {
+    html += `<div style="margin:8px 16px;padding:10px 14px;background:#e8f4fd;border:1px solid #90caf9;border-radius:10px">
+      <div style="font-size:13px;font-weight:600;color:#1565c0;margin-bottom:6px">📋 今日待發彙總</div>
+      ${pendingSuppliers.map(s =>
+        `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0">
+          <span style="font-size:13px;color:#1565c0">${s.name}（${s.count} 項）</span>
+          <button onclick="markSupplierSent('${s.id}',this)" style="font-size:11px;padding:3px 10px;border:1px solid #90caf9;border-radius:6px;background:#fff;color:#1565c0;cursor:pointer;font-family:inherit">標記已發</button>
+        </div>`
+      ).join('')}
+    </div>`;
+  }
+
   html += '<div class="stat-grid">';
   html += `<div class="stat-card" onclick="switchTab('receive')"><div class="stat-label">待處理訂單</div><div class="stat-value ${pendingCount > 0 ? 'orange' : 'green'}">${pendingCount}</div><div style="font-size:11px;color:var(--text3);margin-top:4px">已送出 / 已確認</div></div>`;
   html += `<div class="stat-card" onclick="switchTab('price')"><div class="stat-label">待審核價格</div><div class="stat-value ${priceCount > 0 ? 'red' : 'green'}">${priceCount}</div><div style="font-size:11px;color:var(--text3);margin-top:4px">價格變更待核准</div></div>`;
@@ -3088,6 +3122,19 @@ async function loadDashboard() {
   });
 
   el.innerHTML = html;
+}
+
+function markSupplierSent(supId, btn) {
+  const today = getToday();
+  const key = 'dash_sent_' + today;
+  const sent = JSON.parse(localStorage.getItem(key) || '[]');
+  if (!sent.includes(supId)) sent.push(supId);
+  localStorage.setItem(key, JSON.stringify(sent));
+  const row = btn.parentElement;
+  row.style.opacity = '0.4';
+  row.style.textDecoration = 'line-through';
+  btn.textContent = '✓ 已發';
+  btn.disabled = true;
 }
 
 // ══════════ ORDER TEMPLATES ══════════

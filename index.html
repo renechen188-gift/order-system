@@ -3075,7 +3075,7 @@ async function loadDashboard() {
     .map(sid => {
       const sup = allSuppliers.find(s => s.id === sid);
       return sup ? { id: sid, name: sup.name, type: sup.type, count: supplierOrderMap[sid] } : null;
-    }).filter(Boolean).filter(s => s.type !== 'central_kitchen');
+    }).filter(Boolean);
 
   let html = '<div class="section-bar">總覽</div>';
 

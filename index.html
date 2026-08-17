@@ -161,6 +161,7 @@
   .dash-dot.on{background:var(--green)}.dash-dot.off{background:var(--border)}
   .dash-store-name{flex:1;font-size:14px;font-weight:500}
   .dash-store-info{font-size:12px;color:var(--text3)}
+  .hidden{display:none}
 
   .tpl-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity 0.2s}
   .tpl-overlay.show{opacity:1;pointer-events:all}
@@ -3044,13 +3045,20 @@ async function loadDashboard() {
   const [{ count: pendingCount }, { count: priceCount }, { data: todayOrders }] = await Promise.all([
     sb.from('orders').select('*', { count: 'exact', head: true }).in('status', ['submitted', 'confirmed']),
     sb.from('price_reviews').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-    sb.from('orders').select('store_id, status').eq('order_date', today).neq('status', 'cancelled')
+    sb.from('orders').select('*, order_items(*, items(*))').eq('order_date', today).neq('status', 'cancelled')
   ]);
 
   const storeOrderMap = {};
   (todayOrders || []).forEach(o => {
-    if (!storeOrderMap[o.store_id]) storeOrderMap[o.store_id] = 0;
-    storeOrderMap[o.store_id]++;
+    if (!storeOrderMap[o.store_id]) storeOrderMap[o.store_id] = { count: 0, items: [] };
+    storeOrderMap[o.store_id].count++;
+    (o.order_items || []).forEach(oi => {
+      const item = oi.items;
+      if (!item) return;
+      const existing = storeOrderMap[o.store_id].items.find(x => x.id === item.id);
+      if (existing) { existing.qty += oi.ordered_qty; }
+      else { storeOrderMap[o.store_id].items.push({ id: item.id, name: item.name, qty: oi.ordered_qty, unit: item.unit || '' }); }
+    });
   });
 
   const activeStores = allStores.filter(s => s.is_active && s.type === 'store');
@@ -3063,12 +3071,19 @@ async function loadDashboard() {
 
   html += '<div style="padding:14px 16px 6px;font-size:13px;font-weight:600;color:var(--text2)">今日各店叫貨</div>';
   activeStores.forEach(store => {
-    const count = storeOrderMap[store.id] || 0;
-    const hasOrder = count > 0;
-    html += `<div class="dash-store-row">
-      <div class="dash-dot ${hasOrder ? 'on' : 'off'}"></div>
-      <div class="dash-store-name">${store.name}</div>
-      <div class="dash-store-info">${hasOrder ? count + ' 筆訂單' : '尚未叫貨'}</div>
+    const data = storeOrderMap[store.id];
+    const hasOrder = data && data.count > 0;
+    html += `<div>
+      <div class="dash-store-row" style="cursor:pointer" onclick="this.nextElementSibling&&this.nextElementSibling.classList.toggle('hidden')">
+        <div class="dash-dot ${hasOrder ? 'on' : 'off'}"></div>
+        <div class="dash-store-name">${store.name}</div>
+        <div class="dash-store-info">${hasOrder ? data.count + ' 筆 · ' + data.items.length + ' 項 ▾' : '尚未叫貨'}</div>
+      </div>
+      ${hasOrder ? `<div class="hidden" style="background:var(--surface2);border-bottom:1px solid var(--border)">
+        ${data.items.sort((a, b) => a.name.localeCompare(b.name, 'zh-TW')).map(it =>
+          `<div style="display:flex;justify-content:space-between;padding:6px 16px 6px 38px;font-size:13px;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">${it.name}</span><span style="font-weight:600;color:var(--accent)">${it.qty} ${it.unit}</span></div>`
+        ).join('')}
+      </div>` : ''}
     </div>`;
   });
 

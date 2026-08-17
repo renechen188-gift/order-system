@@ -1165,17 +1165,26 @@ async function loadSummary() {
         return `<span class="fulfill-store" style="border-color:${isCool ? '#3b82f6' : '#ef4444'}40;color:${isCool ? '#3b82f6' : '#ef4444'}">${sn} ${s.qty}</span>`;
       }).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--accent);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
     });
-    html += `<div class="copy-text" id="${copyId}">${copyText}</div><button class="copy-btn" onclick="copyToClipboard('${copyId}')">📋 複製採購單文字</button></div>`;
+    html += `<div class="copy-text" id="${copyId}">${copyText}</div><button class="copy-btn" onclick="copyToClipboard('${copyId}','${data.supId}')">📋 複製採購單文字</button></div>`;
   }
   el.innerHTML = html;
 }
 
-function copyToClipboard(id) {
+function copyToClipboard(id, supIds) {
   const text = document.getElementById(id).textContent;
   navigator.clipboard.writeText(text).then(() => {
-    const btn = document.querySelector(`[onclick="copyToClipboard('${id}')"]`);
+    const btn = event.target;
+    const origText = btn.textContent;
     btn.textContent = '✅ 已複製';
-    setTimeout(() => btn.textContent = '📋 複製採購單文字', 2000);
+    setTimeout(() => btn.textContent = origText, 2000);
+    if (supIds) {
+      const today = getToday();
+      const key = 'dash_sent_' + today;
+      const sent = JSON.parse(localStorage.getItem(key) || '[]');
+      const ids = Array.isArray(supIds) ? supIds : [supIds];
+      ids.forEach(sid => { if (!sent.includes(sid)) sent.push(sid); });
+      localStorage.setItem(key, JSON.stringify(sent));
+    }
   });
 }
 
@@ -1255,7 +1264,8 @@ async function loadKitchenSummary() {
     for (const it of il) {
       html += `<div class="card-row"><div class="cr-info"><div class="cr-name">${it.name}</div><div class="cr-sub">${it.stores.map(s => { const isCool = s.store.startsWith('涼三伯'); return `<span class="fulfill-store" style="border-color:${isCool ? '#3b82f6' : '#ef4444'}40;color:${isCool ? '#3b82f6' : '#ef4444'}">${sn(s.store)} ${s.qty}</span>`; }).join(' ')}</div></div><div style="font-size:16px;font-weight:700;color:var(--purple);min-width:55px;text-align:right">${it.total} ${it.unit}</div></div>`;
     }
-    html += `<div class="copy-text" id="${copyId}">${catCopy}</div><button class="copy-btn" onclick="copyToClipboard('${copyId}')">📋 複製【${cat}】</button></div>`;
+    const kitSupIdStr = [...kitchenSupIds].map(id => `'${id}'`).join(',');
+    html += `<div class="copy-text" id="${copyId}">${catCopy}</div><button class="copy-btn" onclick="copyToClipboard('${copyId}',[${kitSupIdStr}])">📋 複製【${cat}】</button></div>`;
   }
   el.innerHTML = html;
 }

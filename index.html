@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>麻媽家·涼三伯 叫貨系統</title>
+<title>麻媽家·涼三伯 進銷存系統</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
@@ -37,6 +37,10 @@
   .view-tab{flex-shrink:0;padding:8px 10px;border:none;border-radius:8px;font-size:12px;font-weight:500;color:var(--text2);background:transparent;cursor:pointer;font-family:inherit;text-align:center;white-space:nowrap;position:relative}
   .view-tab.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.08)}
   .tab-badge{position:absolute;top:2px;right:4px;width:8px;height:8px;border-radius:50%;background:var(--red)}
+  .tab-groups{display:flex;gap:6px;margin-bottom:8px;overflow-x:auto;scrollbar-width:none}
+  .tab-groups::-webkit-scrollbar{display:none}
+  .tab-group-btn{flex-shrink:0;padding:6px 16px;border:1.5px solid var(--border);border-radius:20px;font-size:13px;font-weight:600;color:var(--text2);background:var(--surface);cursor:pointer;font-family:inherit;white-space:nowrap;transition:all 0.15s}
+  .tab-group-btn.active{border-color:var(--accent);background:var(--accent);color:#fff}
 
   .page{display:none}.page.active{display:block}
 
@@ -385,7 +389,7 @@
 <div id="loginScreen" class="login-screen">
   <div class="login-box">
     <div class="login-logo">麻媽家·涼三伯</div>
-    <div class="login-sub">叫貨系統</div>
+    <div class="login-sub">進銷存系統</div>
     <label class="login-label">門店代號</label>
     <input class="login-input" id="loginEmail" type="text" placeholder="輸入代號" autocomplete="username" style="text-align:center;font-size:18px;font-weight:600;letter-spacing:1px">
     <div id="loginPassWrap" style="display:none">
@@ -401,13 +405,13 @@
 <div id="appRoot" style="display:none">
   <div class="header">
     <div class="header-top">
-      <div class="logo" id="appLogo">麻媽家·涼三伯 <span>叫貨系統</span></div>
+      <div class="logo" id="appLogo">麻媽家·涼三伯 <span>進銷存系統</span></div>
       <div>
         <span class="store-label" id="userLabel"></span>
         <button class="logout-btn" onclick="doLogout()">登出</button>
       </div>
     </div>
-    <div class="view-tabs" id="mainTabs"></div>
+    <div id="mainTabs"></div>
   </div>
 
   <div id="dashboardPage" class="page"></div>
@@ -529,28 +533,100 @@ async function initApp() {
   await loadData();
 }
 
+let currentGroup = '';
+
 function buildTabs() {
-  const tabs = [];
+  const groups = [];
+  const flatTabs = [];
+
   if (currentUser.role === 'admin') {
-    tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'export', label: '匯出' }, { id: 'mapping', label: '品項對照' }, { id: 'sop', label: 'SOP配比' }, { id: 'sales', label: '銷售匯入' }, { id: 'prep', label: '備料' }, { id: 'waste', label: '報廢' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
+    groups.push(
+      { id: 'g-ops', label: '營運', tabs: [
+        { id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }
+      ]},
+      { id: 'g-inv', label: '庫存', tabs: [
+        { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }
+      ]},
+      { id: 'g-cost', label: '成本', tabs: [
+        { id: 'sop', label: 'SOP配比' }, { id: 'sales', label: '銷售匯入' }, { id: 'prep', label: '備料' }, { id: 'waste', label: '報廢' }
+      ]},
+      { id: 'g-rpt', label: '報表', tabs: [
+        { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'export', label: '匯出' }
+      ]},
+      { id: 'g-adm', label: '管理', tabs: [
+        { id: 'mapping', label: '品項對照' }, { id: 'price', label: '價格審核' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' }
+      ]}
+    );
   } else if (currentUser.role === 'ops') {
-    tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'sop', label: 'SOP配比' }, { id: 'prep', label: '備料' }, { id: 'waste', label: '報廢' });
+    groups.push(
+      { id: 'g-ops', label: '營運', tabs: [
+        { id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }
+      ]},
+      { id: 'g-rpt', label: '報表', tabs: [
+        { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }
+      ]},
+      { id: 'g-cost', label: '成本', tabs: [
+        { id: 'sop', label: 'SOP配比' }, { id: 'prep', label: '備料' }, { id: 'waste', label: '報廢' }
+      ]}
+    );
   } else if (currentUser.role === 'kitchen') {
-    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'sop', label: 'SOP配比' });
+    flatTabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'sop', label: 'SOP配比' });
   } else if (currentUser.role === 'kitchen_fulfill') {
-    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' }, { id: 'sop', label: 'SOP配比' });
+    flatTabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' }, { id: 'sop', label: 'SOP配比' });
   } else if (currentUser.role === 'kitchen_order') {
-    tabs.push({ id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' }, { id: 'sop', label: 'SOP配比' });
+    flatTabs.push({ id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' }, { id: 'sop', label: 'SOP配比' });
   } else {
-    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'sop', label: 'SOP配比' }, { id: 'prep', label: '備料' }, { id: 'waste', label: '報廢' });
+    groups.push(
+      { id: 'g-ops', label: '營運', tabs: [
+        { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }
+      ]},
+      { id: 'g-inv', label: '庫存', tabs: [
+        { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }
+      ]},
+      { id: 'g-cost', label: '成本', tabs: [
+        { id: 'sop', label: 'SOP配比' }, { id: 'prep', label: '備料' }, { id: 'waste', label: '報廢' }
+      ]}
+    );
   }
 
-  document.getElementById('mainTabs').innerHTML = tabs.map((t, i) =>
-    `<button class="view-tab ${i === 0 ? 'active' : ''}" onclick="switchTab('${t.id}')" data-tab="${t.id}">${t.label}<span class="tab-badge" id="badge-${t.id}" style="display:none"></span></button>`
-  ).join('');
+  const container = document.getElementById('mainTabs');
 
-  currentTab = tabs[0].id;
-  tabs.forEach(t => document.getElementById(t.id + 'Page').classList.toggle('active', t.id === currentTab));
+  if (groups.length > 0) {
+    window._tabGroups = groups;
+    currentGroup = groups[0].id;
+    container.className = '';
+    container.innerHTML =
+      `<div class="tab-groups">${groups.map((g, i) =>
+        `<button class="tab-group-btn ${i === 0 ? 'active' : ''}" onclick="switchGroup('${g.id}')" data-group="${g.id}">${g.label}</button>`
+      ).join('')}</div><div class="view-tabs" id="subTabs"></div>`;
+    renderSubTabs(groups[0]);
+    currentTab = groups[0].tabs[0].id;
+    const allIds = groups.flatMap(g => g.tabs.map(t => t.id));
+    allIds.forEach(id => { const el = document.getElementById(id + 'Page'); if (el) el.classList.toggle('active', id === currentTab); });
+  } else {
+    container.className = 'view-tabs';
+    container.innerHTML = flatTabs.map((t, i) =>
+      `<button class="view-tab ${i === 0 ? 'active' : ''}" onclick="switchTab('${t.id}')" data-tab="${t.id}">${t.label}<span class="tab-badge" id="badge-${t.id}" style="display:none"></span></button>`
+    ).join('');
+    currentTab = flatTabs[0].id;
+    flatTabs.forEach(t => { const el = document.getElementById(t.id + 'Page'); if (el) el.classList.toggle('active', t.id === currentTab); });
+  }
+}
+
+function switchGroup(groupId) {
+  if (currentGroup === groupId) return;
+  currentGroup = groupId;
+  document.querySelectorAll('.tab-group-btn').forEach(b => b.classList.toggle('active', b.dataset.group === groupId));
+  const group = window._tabGroups.find(g => g.id === groupId);
+  if (group) { renderSubTabs(group); switchTab(group.tabs[0].id); }
+}
+
+function renderSubTabs(group) {
+  const el = document.getElementById('subTabs');
+  if (!el) return;
+  el.innerHTML = group.tabs.map(t =>
+    `<button class="view-tab ${t.id === currentTab ? 'active' : ''}" onclick="switchTab('${t.id}')" data-tab="${t.id}">${t.label}<span class="tab-badge" id="badge-${t.id}" style="display:none"></span></button>`
+  ).join('');
 }
 
 async function loadData() {
@@ -4045,18 +4121,7 @@ async function importSalesData() {
 }
 
 // ══════════ 備料登記 ══════════
-const CORE_ITEMS = [
-  { name: '嫩雞胸肉', unit: 'g' },
-  { name: '豬肉片', unit: 'g' },
-  { name: '牛肉片', unit: 'g' },
-  { name: '涼皮', unit: '份' },
-  { name: '湯底', unit: '鍋' },
-  { name: '滷蛋', unit: '顆' },
-  { name: '鴨血', unit: '份' },
-  { name: '涼麵', unit: '份' },
-  { name: '白飯', unit: '鍋' },
-  { name: '咖哩醬', unit: '份' }
-];
+let coreItems = [];
 let prepDate = getToday();
 let prepStoreId = null;
 
@@ -4065,12 +4130,17 @@ async function loadPrep() {
   const isAdmin = currentUser.role === 'admin' || currentUser.role === 'ops';
   prepStoreId = isAdmin ? (prepStoreId || allStores[0]?.id) : currentUser.store_id;
 
+  const { data: ci } = await sb.from('core_items').select('*').eq('is_active', true).order('sort_order');
+  coreItems = ci || [];
+
   let html = '';
   if (isAdmin) {
-    html += `<div style="padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border)">
-      <select class="form-select" onchange="prepStoreId=this.value;loadPrep()" style="font-size:14px">
+    html += `<div style="padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+      <select class="form-select" onchange="prepStoreId=this.value;loadPrep()" style="font-size:14px;flex:1">
         ${allStores.map(s => `<option value="${s.id}" ${prepStoreId === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}
-      </select></div>`;
+      </select>
+      <button class="add-btn" style="flex-shrink:0" onclick="openCoreItemsManager()">⚙ 管理食材</button>
+    </div>`;
   }
 
   html += `<div class="prep-date-nav">
@@ -4084,7 +4154,7 @@ async function loadPrep() {
   (existing || []).forEach(r => { existingMap[r.item_name] = r; });
 
   html += '<div class="section-bar">核心食材備料量</div>';
-  CORE_ITEMS.forEach((item, idx) => {
+  coreItems.forEach((item, idx) => {
     const rec = existingMap[item.name];
     const val = rec ? rec.quantity : '';
     const filled = val !== '' && val > 0;
@@ -4100,6 +4170,65 @@ async function loadPrep() {
   el.innerHTML = html;
 }
 
+function openCoreItemsManager() {
+  document.getElementById('formOverlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'formOverlay';
+  overlay.className = 'form-overlay show';
+  overlay.innerHTML = `
+    <div class="form-sheet">
+      <div class="form-handle"></div>
+      <div class="form-header"><div class="form-title">管理核心食材</div><button class="form-close" onclick="document.getElementById('formOverlay').remove();loadPrep()">✕</button></div>
+      <div class="form-body" id="coreItemsBody"></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); loadPrep(); } });
+  renderCoreItemsManager();
+}
+
+async function renderCoreItemsManager() {
+  const { data } = await sb.from('core_items').select('*').order('sort_order');
+  const items = data || [];
+  let html = '';
+  items.forEach(item => {
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:15px;font-weight:500;flex:1">${item.name}</span>
+      <span style="font-size:13px;color:var(--text3)">${item.unit}</span>
+      <span style="font-size:12px;color:var(--text3);min-width:20px;text-align:center">#${item.sort_order}</span>
+      <div class="toggle ${item.is_active ? 'on' : ''}" style="width:36px;height:20px;min-width:36px" onclick="toggleCoreItem('${item.id}',${!item.is_active})"></div>
+      <button class="sop-rm-btn" onclick="deleteCoreItem('${item.id}')">✕</button>
+    </div>`;
+  });
+  html += `<div style="margin-top:12px;display:flex;gap:6px">
+    <input class="form-input" id="newCoreName" placeholder="食材名稱" style="flex:1">
+    <input class="form-input" id="newCoreUnit" placeholder="單位" style="width:60px">
+    <button class="add-btn" onclick="addCoreItem()">＋</button>
+  </div>`;
+  document.getElementById('coreItemsBody').innerHTML = html;
+}
+
+async function addCoreItem() {
+  const name = document.getElementById('newCoreName').value.trim();
+  const unit = document.getElementById('newCoreUnit').value.trim();
+  if (!name || !unit) { alert('請輸入名稱和單位'); return; }
+  const { data: max } = await sb.from('core_items').select('sort_order').order('sort_order', { ascending: false }).limit(1);
+  const nextOrder = (max?.[0]?.sort_order || 0) + 1;
+  const { error } = await sb.from('core_items').insert({ name, unit, sort_order: nextOrder });
+  if (error) { alert('新增失敗：' + error.message); return; }
+  renderCoreItemsManager();
+}
+
+async function toggleCoreItem(id, active) {
+  await sb.from('core_items').update({ is_active: active }).eq('id', id);
+  renderCoreItemsManager();
+}
+
+async function deleteCoreItem(id) {
+  if (!confirm('確定刪除？')) return;
+  await sb.from('core_items').delete().eq('id', id);
+  renderCoreItemsManager();
+}
+
 function shiftPrepDate(delta) {
   const d = new Date(prepDate);
   d.setDate(d.getDate() + delta);
@@ -4110,7 +4239,7 @@ function shiftPrepDate(delta) {
 async function savePrep() {
   if (!prepStoreId) { alert('請選擇門店'); return; }
   const rows = [];
-  CORE_ITEMS.forEach((item, idx) => {
+  coreItems.forEach((item, idx) => {
     const val = parseFloat(document.getElementById('prepQty' + idx).value) || 0;
     if (val > 0) {
       rows.push({
@@ -4144,6 +4273,11 @@ async function loadWaste() {
   const isAdmin = currentUser.role === 'admin' || currentUser.role === 'ops';
   wasteStoreId = isAdmin ? (wasteStoreId || allStores[0]?.id) : currentUser.store_id;
 
+  if (!coreItems.length) {
+    const { data: ci } = await sb.from('core_items').select('*').eq('is_active', true).order('sort_order');
+    coreItems = ci || [];
+  }
+
   let html = '';
   if (isAdmin) {
     html += `<div style="padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border)">
@@ -4165,11 +4299,11 @@ async function loadWaste() {
     <div style="padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--border)">
       <div class="form-row" style="margin-bottom:8px">
         <div class="form-group" style="margin:0"><select class="form-select" id="wasteItem" style="font-size:14px">
-          ${CORE_ITEMS.map(i => `<option value="${i.name}" data-unit="${i.unit}">${i.name}</option>`).join('')}
+          ${coreItems.map(i => `<option value="${i.name}" data-unit="${i.unit}">${i.name}</option>`).join('')}
         </select></div>
         <div class="form-group" style="margin:0;display:flex;gap:6px">
           <input type="number" class="form-input" id="wasteQty" placeholder="數量" inputmode="decimal" style="flex:1">
-          <span id="wasteUnit" style="font-size:13px;color:var(--text3);display:flex;align-items:center;min-width:30px">${CORE_ITEMS[0].unit}</span>
+          <span id="wasteUnit" style="font-size:13px;color:var(--text3);display:flex;align-items:center;min-width:30px">${coreItems[0].unit}</span>
         </div>
       </div>
       <div class="form-row" style="margin-bottom:8px">

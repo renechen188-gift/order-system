@@ -260,6 +260,38 @@
   .map-tag.ch{background:#e0f2fe;color:#0369a1}
   .map-tag.unmapped{background:var(--yellow-bg);color:var(--yellow)}
 
+  .sop-card{margin:10px 16px;background:var(--surface);border-radius:12px;border:1px solid var(--border);overflow:hidden}
+  .sop-card-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;cursor:pointer}
+  .sop-card-head:active{background:var(--surface2)}
+  .sop-product{font-size:15px;font-weight:600;flex:1}
+  .sop-brand-tag{font-size:11px;padding:2px 8px;border-radius:4px;font-weight:500;margin-right:8px}
+  .sop-brand-tag.mama{background:#fee2e2;color:#dc2626}
+  .sop-brand-tag.cool{background:#dbeafe;color:#2563eb}
+  .sop-brand-tag.shared{background:var(--surface2);color:var(--text2)}
+  .sop-detail{border-top:1px solid var(--border);padding:12px 16px;display:none}
+  .sop-detail.open{display:block}
+  .sop-section-label{font-size:12px;font-weight:600;color:var(--text3);margin:10px 0 6px;letter-spacing:0.5px}
+  .sop-section-label:first-child{margin-top:0}
+  .sop-ingr{display:flex;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:14px}
+  .sop-ingr:last-child{border-bottom:none}
+  .sop-ingr-name{flex:1;font-weight:500}
+  .sop-ingr-qty{color:var(--accent);font-weight:700;min-width:80px;text-align:right}
+  .sop-step{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px}
+  .sop-step:last-child{border-bottom:none}
+  .sop-step-num{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+  .sop-step-text{flex:1;line-height:1.5}
+  .sop-meta{font-size:13px;color:var(--text2);line-height:1.6;margin-top:4px}
+  .sop-ingr-form{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+  .sop-ingr-form input{flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;outline:none}
+  .sop-ingr-form input:focus{border-color:var(--accent)}
+  .sop-ingr-form .qty{width:70px;flex:none;text-align:center}
+  .sop-ingr-form .unit{width:50px;flex:none;text-align:center}
+  .sop-rm-btn{width:28px;height:28px;border:none;background:var(--red-bg);color:var(--red);border-radius:6px;font-size:14px;cursor:pointer;flex-shrink:0}
+  .sop-add-row{font-size:13px;color:var(--accent);background:none;border:1px dashed var(--accent);border-radius:6px;padding:6px;width:100%;cursor:pointer;font-family:inherit;margin-top:4px}
+  .sop-step-form{display:flex;gap:6px;align-items:flex-start;margin-bottom:6px}
+  .sop-step-form textarea{flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;outline:none;resize:none;height:40px}
+  .sop-step-form textarea:focus{border-color:var(--accent)}
+
   .count-period{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between;cursor:pointer}
   .count-period:active{background:var(--surface2)}
   .count-period-info{flex:1}
@@ -361,6 +393,7 @@
   <div id="suppliersPage" class="page"></div>
   <div id="exportPage" class="page"></div>
   <div id="mappingPage" class="page"></div>
+  <div id="sopPage" class="page"></div>
 </div>
 
 <!-- Cart -->
@@ -462,17 +495,17 @@ async function initApp() {
 function buildTabs() {
   const tabs = [];
   if (currentUser.role === 'admin') {
-    tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'export', label: '匯出' }, { id: 'mapping', label: '品項對照' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
+    tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'export', label: '匯出' }, { id: 'mapping', label: '品項對照' }, { id: 'sop', label: 'SOP配比' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
   } else if (currentUser.role === 'ops') {
-    tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' });
+    tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'sop', label: 'SOP配比' });
   } else if (currentUser.role === 'kitchen') {
-    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
+    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'sop', label: 'SOP配比' });
   } else if (currentUser.role === 'kitchen_fulfill') {
-    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' });
+    tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' }, { id: 'sop', label: 'SOP配比' });
   } else if (currentUser.role === 'kitchen_order') {
-    tabs.push({ id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' });
+    tabs.push({ id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' }, { id: 'sop', label: 'SOP配比' });
   } else {
-    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' });
+    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'sop', label: 'SOP配比' });
   }
 
   document.getElementById('mainTabs').innerHTML = tabs.map((t, i) =>
@@ -515,7 +548,7 @@ async function loadData() {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('#mainTabs .view-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['dashboard', 'order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'stock', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer', 'export', 'consume', 'mapping'].forEach(id => {
+  ['dashboard', 'order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'stock', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer', 'export', 'consume', 'mapping', 'sop'].forEach(id => {
     const el = document.getElementById(id + 'Page');
     if (el) el.classList.toggle('active', id === tab);
   });
@@ -536,6 +569,7 @@ function switchTab(tab) {
   if (tab === 'stock') loadStock();
   if (tab === 'consume') loadConsume();
   if (tab === 'mapping') loadMapping();
+  if (tab === 'sop') loadSop();
 }
 
 function getToday() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
@@ -3516,6 +3550,220 @@ async function deleteMapping(mappingId) {
   if (error) { alert('刪除失敗：' + error.message); return; }
   document.getElementById('formOverlay').remove();
   loadMapping();
+}
+
+// ══════════ SOP 配比 ══════════
+let sopList = [];
+let sopBrandFilter = 'ALL';
+let sopSearch = '';
+
+async function loadSop() {
+  const el = document.getElementById('sopPage');
+  el.innerHTML = '<div class="loading">載入中…</div>';
+  const [{ data: sops }, { data: sp }] = await Promise.all([
+    sb.from('product_sop').select('*, standard_products(name, category), users:updated_by(username)').order('updated_at', { ascending: false }),
+    sb.from('standard_products').select('*').eq('is_active', true).order('name')
+  ]);
+  sopList = sops || [];
+  stdProducts = sp || [];
+  renderSop();
+}
+
+function renderSop() {
+  const el = document.getElementById('sopPage');
+  const isAdmin = currentUser.role === 'admin';
+  const brands = ['ALL', ...new Set(sopList.map(s => s.brand).filter(Boolean))];
+  let filtered = sopList;
+  if (sopBrandFilter !== 'ALL') filtered = filtered.filter(s => s.brand === sopBrandFilter);
+  if (sopSearch) {
+    const q = sopSearch.toLowerCase();
+    filtered = filtered.filter(s => (s.standard_products?.name || '').toLowerCase().includes(q));
+  }
+
+  let html = '';
+  if (isAdmin) {
+    html += `<div class="mgmt-bar"><span class="count">${filtered.length} 份 SOP</span><button class="add-btn" onclick="openSopForm()">＋ 新增 SOP</button></div>`;
+  } else {
+    html += `<div class="mgmt-bar"><span class="count">${filtered.length} 份 SOP</span></div>`;
+  }
+  html += `<div class="search-wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input class="search-input" placeholder="搜尋品項…" value="${sopSearch}" oninput="sopSearch=this.value;renderSop()"></div>`;
+  if (brands.length > 2) {
+    html += `<div class="cat-filter">${brands.map(b => `<button class="cat-btn ${sopBrandFilter === b ? 'active' : ''}" onclick="sopBrandFilter='${b}';renderSop()">${b === 'ALL' ? '全部' : b}</button>`).join('')}</div>`;
+  }
+
+  if (!filtered.length) {
+    html += '<div class="empty-state"><div class="icon">📖</div><div class="msg">尚無 SOP 配比</div></div>';
+  }
+
+  filtered.forEach((sop, idx) => {
+    const brandClass = sop.brand === '麻媽家' ? 'mama' : sop.brand === '涼三伯' ? 'cool' : 'shared';
+    const ingredients = sop.ingredients || [];
+    const steps = sop.steps || [];
+    html += `<div class="sop-card">
+      <div class="sop-card-head" onclick="toggleSopDetail(${idx})">
+        ${sop.brand ? `<span class="sop-brand-tag ${brandClass}">${sop.brand}</span>` : ''}
+        <span class="sop-product">${sop.standard_products?.name || '—'}</span>
+        <span style="font-size:12px;color:var(--text3)">${ingredients.length} 料 · ${steps.length} 步</span>
+        <span style="margin-left:8px;color:var(--text3);font-size:14px" id="sopArrow${idx}">›</span>
+      </div>
+      <div class="sop-detail" id="sopDetail${idx}">`;
+
+    if (ingredients.length) {
+      html += '<div class="sop-section-label">配料</div>';
+      ingredients.forEach(ig => {
+        html += `<div class="sop-ingr"><span class="sop-ingr-name">${ig.name}</span><span class="sop-ingr-qty">${ig.qty} ${ig.unit || ''}</span></div>`;
+      });
+    }
+
+    if (steps.length) {
+      html += '<div class="sop-section-label">步驟</div>';
+      steps.forEach((st, si) => {
+        const text = typeof st === 'string' ? st : st.text || '';
+        html += `<div class="sop-step"><span class="sop-step-num">${si + 1}</span><span class="sop-step-text">${text}</span></div>`;
+      });
+    }
+
+    if (sop.standard || sop.storage) {
+      html += '<div class="sop-section-label">標準 / 保存</div><div class="sop-meta">';
+      if (sop.standard) html += `成品標準：${sop.standard}<br>`;
+      if (sop.storage) html += `保存條件：${sop.storage}`;
+      html += '</div>';
+    }
+
+    if (isAdmin) {
+      html += `<div style="padding:8px 0 4px;display:flex;gap:8px">
+        <button class="add-btn" style="flex:1" onclick="openSopForm('${sop.id}')">✏️ 編輯</button>
+        <button class="add-btn" style="flex:none;background:var(--red-bg);color:var(--red);border:1px solid var(--red)" onclick="deleteSop('${sop.id}')">刪除</button>
+      </div>`;
+    }
+
+    html += '</div></div>';
+  });
+
+  el.innerHTML = html;
+}
+
+function toggleSopDetail(idx) {
+  const detail = document.getElementById('sopDetail' + idx);
+  const arrow = document.getElementById('sopArrow' + idx);
+  const isOpen = detail.classList.toggle('open');
+  arrow.textContent = isOpen ? '⌄' : '›';
+}
+
+function openSopForm(sopId) {
+  const sop = sopId ? sopList.find(s => s.id === sopId) : null;
+  const isEdit = !!sop;
+  document.getElementById('formOverlay')?.remove();
+
+  const ingredients = isEdit ? (sop.ingredients || []) : [];
+  const steps = isEdit ? (sop.steps || []) : [];
+
+  const overlay = document.createElement('div');
+  overlay.id = 'formOverlay';
+  overlay.className = 'form-overlay show';
+  overlay.innerHTML = `
+    <div class="form-sheet">
+      <div class="form-handle"></div>
+      <div class="form-header"><div class="form-title">${isEdit ? '編輯 SOP' : '新增 SOP'}</div><button class="form-close" onclick="document.getElementById('formOverlay').remove()">✕</button></div>
+      <div class="form-body">
+        <div class="form-group"><label class="form-label">標準品項 *</label>
+          <select class="form-select" id="sopProduct" ${isEdit ? 'disabled' : ''}>
+            <option value="">— 選擇品項 —</option>
+            ${stdProducts.map(p => `<option value="${p.id}" ${sop?.standard_product_id === p.id ? 'selected' : ''}>${p.name}${p.category ? ' (' + p.category + ')' : ''}</option>`).join('')}
+          </select></div>
+        <div class="form-group"><label class="form-label">品牌</label>
+          <div class="chip-group" id="sopBrand">
+            <span class="chip ${(!sop?.brand || sop?.brand === '麻媽家') && !isEdit ? 'active' : sop?.brand === '麻媽家' ? 'active' : ''}" data-val="麻媽家" onclick="selectChip('sopBrand',this)">麻媽家</span>
+            <span class="chip ${sop?.brand === '涼三伯' ? 'active' : ''}" data-val="涼三伯" onclick="selectChip('sopBrand',this)">涼三伯</span>
+            <span class="chip ${sop?.brand === '共用' ? 'active' : ''}" data-val="共用" onclick="selectChip('sopBrand',this)">共用</span>
+          </div></div>
+        <div class="form-group"><label class="form-label">配料</label>
+          <div id="sopIngrList">${ingredients.map((ig, i) => sopIngrRow(ig, i)).join('')}</div>
+          <button class="sop-add-row" onclick="addSopIngr()">＋ 新增配料</button></div>
+        <div class="form-group"><label class="form-label">步驟</label>
+          <div id="sopStepList">${steps.map((st, i) => sopStepRow(st, i)).join('')}</div>
+          <button class="sop-add-row" onclick="addSopStep()">＋ 新增步驟</button></div>
+        <div class="form-group"><label class="form-label">成品標準</label><input class="form-input" id="sopStandard" value="${sop?.standard || ''}" placeholder="例：重量 350g±10g、溫度 85°C 以上"></div>
+        <div class="form-group"><label class="form-label">保存條件</label><input class="form-input" id="sopStorage" value="${sop?.storage || ''}" placeholder="例：冷藏 0-4°C，效期 3 天"></div>
+        <button class="form-save" onclick="saveSop('${sopId || ''}')">${isEdit ? '儲存變更' : '新增 SOP'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+let sopIngrIdx = 100;
+function sopIngrRow(ig, i) {
+  const id = 'si' + (sopIngrIdx++);
+  return `<div class="sop-ingr-form" id="${id}"><input class="ingr-name" value="${ig?.name || ''}" placeholder="食材名稱"><input class="qty ingr-qty" type="number" value="${ig?.qty ?? ''}" placeholder="用量" inputmode="decimal"><input class="unit ingr-unit" value="${ig?.unit || ''}" placeholder="單位"><button class="sop-rm-btn" onclick="document.getElementById('${id}').remove()">✕</button></div>`;
+}
+function addSopIngr() {
+  document.getElementById('sopIngrList').insertAdjacentHTML('beforeend', sopIngrRow({}, 0));
+}
+
+let sopStepIdx = 100;
+function sopStepRow(st, i) {
+  const id = 'ss' + (sopStepIdx++);
+  const text = typeof st === 'string' ? st : st?.text || '';
+  return `<div class="sop-step-form" id="${id}"><textarea class="step-text" placeholder="步驟說明">${text}</textarea><button class="sop-rm-btn" onclick="document.getElementById('${id}').remove()">✕</button></div>`;
+}
+function addSopStep() {
+  document.getElementById('sopStepList').insertAdjacentHTML('beforeend', sopStepRow({}, 0));
+}
+
+async function saveSop(sopId) {
+  const productId = document.getElementById('sopProduct').value;
+  if (!productId) { alert('請選擇標準品項'); return; }
+  const brand = document.querySelector('#sopBrand .chip.active')?.dataset.val || null;
+
+  const ingredients = [];
+  document.querySelectorAll('#sopIngrList .sop-ingr-form').forEach(row => {
+    const name = row.querySelector('.ingr-name').value.trim();
+    const qty = parseFloat(row.querySelector('.ingr-qty').value) || 0;
+    const unit = row.querySelector('.ingr-unit').value.trim();
+    if (name) ingredients.push({ name, qty, unit });
+  });
+
+  const steps = [];
+  document.querySelectorAll('#sopStepList .sop-step-form').forEach(row => {
+    const text = row.querySelector('.step-text').value.trim();
+    if (text) steps.push({ text });
+  });
+
+  const standard = document.getElementById('sopStandard').value.trim() || null;
+  const storage = document.getElementById('sopStorage').value.trim() || null;
+
+  const row = {
+    standard_product_id: productId,
+    brand,
+    ingredients,
+    steps,
+    standard,
+    storage,
+    updated_by: currentUser.id,
+    updated_at: new Date().toISOString()
+  };
+
+  if (sopId) {
+    row.version = (sopList.find(s => s.id === sopId)?.version || 0) + 1;
+  }
+
+  let error;
+  if (sopId) {
+    ({ error } = await sb.from('product_sop').update(row).eq('id', sopId));
+  } else {
+    ({ error } = await sb.from('product_sop').insert(row));
+  }
+  if (error) { alert('儲存失敗：' + error.message); return; }
+  document.getElementById('formOverlay').remove();
+  loadSop();
+}
+
+async function deleteSop(sopId) {
+  if (!confirm('確定要刪除此 SOP？')) return;
+  const { error } = await sb.from('product_sop').delete().eq('id', sopId);
+  if (error) { alert('刪除失敗：' + error.message); return; }
+  loadSop();
 }
 
 // ── Enter key ──

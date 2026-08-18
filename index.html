@@ -252,6 +252,14 @@
   .config-section-title{font-size:15px;font-weight:700;margin-bottom:4px}
   .config-section-sub{font-size:12px;color:var(--text3)}
 
+  .map-sub-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);background:var(--surface)}
+  .map-sub-tab{flex:1;padding:10px;text-align:center;font-size:14px;font-weight:600;color:var(--text2);background:none;border:none;cursor:pointer;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-2px}
+  .map-sub-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .map-unmapped{background:#fff7ed;border-left:3px solid var(--yellow);padding:10px 14px;font-size:13px;color:var(--yellow);display:flex;align-items:center;gap:6px}
+  .map-tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:4px;font-weight:500}
+  .map-tag.ch{background:#e0f2fe;color:#0369a1}
+  .map-tag.unmapped{background:var(--yellow-bg);color:var(--yellow)}
+
   .count-period{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between;cursor:pointer}
   .count-period:active{background:var(--surface2)}
   .count-period-info{flex:1}
@@ -352,6 +360,7 @@
   <div id="countPage" class="page"></div>
   <div id="suppliersPage" class="page"></div>
   <div id="exportPage" class="page"></div>
+  <div id="mappingPage" class="page"></div>
 </div>
 
 <!-- Cart -->
@@ -453,7 +462,7 @@ async function initApp() {
 function buildTabs() {
   const tabs = [];
   if (currentUser.role === 'admin') {
-    tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'export', label: '匯出' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
+    tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'export', label: '匯出' }, { id: 'mapping', label: '品項對照' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
   } else if (currentUser.role === 'ops') {
     tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' });
   } else if (currentUser.role === 'kitchen') {
@@ -506,7 +515,7 @@ async function loadData() {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('#mainTabs .view-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['dashboard', 'order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'stock', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer', 'export', 'consume'].forEach(id => {
+  ['dashboard', 'order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'stock', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer', 'export', 'consume', 'mapping'].forEach(id => {
     const el = document.getElementById(id + 'Page');
     if (el) el.classList.toggle('active', id === tab);
   });
@@ -526,6 +535,7 @@ function switchTab(tab) {
   if (tab === 'export') renderExportPage();
   if (tab === 'stock') loadStock();
   if (tab === 'consume') loadConsume();
+  if (tab === 'mapping') loadMapping();
 }
 
 function getToday() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
@@ -3280,6 +3290,232 @@ async function saveCartAsTemplate() {
 
   if (error) { alert('儲存失敗：' + error.message); return; }
   alert('已儲存為模板「' + name + '」');
+}
+
+// ══════════ 品項對照表 (Module: Cost Control) ══════════
+let mapSubTab = 'products';
+let stdProducts = [];
+let productMappings = [];
+let mapSearchTerm = '';
+let mapCatFilter = 'ALL';
+let mapBrandFilter = 'ALL';
+
+async function loadMapping() {
+  const el = document.getElementById('mappingPage');
+  el.innerHTML = '<div class="loading">載入中…</div>';
+
+  const [{ data: sp }, { data: pm }] = await Promise.all([
+    sb.from('standard_products').select('*').order('category').order('name'),
+    sb.from('product_mapping').select('*, standard_products(name)').order('raw_name')
+  ]);
+  stdProducts = sp || [];
+  productMappings = pm || [];
+  renderMapping();
+}
+
+function renderMapping() {
+  const el = document.getElementById('mappingPage');
+  const unmappedCount = productMappings.filter(m => !m.standard_product_id).length;
+
+  let html = `<div class="map-sub-tabs">
+    <button class="map-sub-tab ${mapSubTab === 'products' ? 'active' : ''}" onclick="mapSubTab='products';renderMapping()">標準品項 (${stdProducts.length})</button>
+    <button class="map-sub-tab ${mapSubTab === 'mappings' ? 'active' : ''}" onclick="mapSubTab='mappings';renderMapping()">對照表 (${productMappings.length})${unmappedCount ? ' ⚠' : ''}</button>
+  </div>`;
+
+  if (mapSubTab === 'products') {
+    html += renderStdProducts();
+  } else {
+    html += renderMappings();
+  }
+  el.innerHTML = html;
+}
+
+function renderStdProducts() {
+  const brands = ['ALL', ...new Set(stdProducts.map(p => p.brand).filter(Boolean))];
+  const cats = ['ALL', ...new Set(stdProducts.map(p => p.category).filter(Boolean))];
+  let filtered = stdProducts;
+  if (mapBrandFilter !== 'ALL') filtered = filtered.filter(p => p.brand === mapBrandFilter);
+  if (mapCatFilter !== 'ALL') filtered = filtered.filter(p => p.category === mapCatFilter);
+  if (mapSearchTerm) {
+    const q = mapSearchTerm.toLowerCase();
+    filtered = filtered.filter(p => p.name.toLowerCase().includes(q));
+  }
+
+  let html = `<div class="mgmt-bar"><span class="count">${filtered.length} 項標準品項</span><button class="add-btn" onclick="openStdProductForm()">＋ 新增品項</button></div>`;
+  html += `<div class="search-wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input class="search-input" placeholder="搜尋品項…" value="${mapSearchTerm}" oninput="mapSearchTerm=this.value;renderMapping()"></div>`;
+  if (brands.length > 2) {
+    html += `<div class="cat-filter">${brands.map(b => `<button class="cat-btn ${mapBrandFilter === b ? 'active' : ''}" onclick="mapBrandFilter='${b}';renderMapping()">${b === 'ALL' ? '全品牌' : b}</button>`).join('')}</div>`;
+  }
+  if (cats.length > 2) {
+    html += `<div class="cat-filter">${cats.map(c => `<button class="cat-btn ${mapCatFilter === c ? 'active' : ''}" onclick="mapCatFilter='${c}';renderMapping()">${c === 'ALL' ? '全部' : c}</button>`).join('')}</div>`;
+  }
+
+  filtered.forEach(p => {
+    const mapCount = productMappings.filter(m => m.standard_product_id === p.id).length;
+    html += `<div class="mgmt-item" onclick="openStdProductForm('${p.id}')">
+      <div class="mi-info"><div class="mi-name">${p.name}</div><div class="mi-sub">${p.brand || '—'} · ${p.category || '—'} · ${mapCount} 筆對照</div></div>
+      <div class="mi-arrow">›</div>
+    </div>`;
+  });
+  if (!filtered.length) html += '<div class="empty-state"><div class="icon">📋</div><div class="msg">沒有標準品項</div></div>';
+  return html;
+}
+
+function renderMappings() {
+  const channels = ['ALL', ...new Set(productMappings.map(m => m.channel).filter(Boolean))];
+  let filtered = productMappings;
+  if (mapCatFilter === 'unmapped') {
+    filtered = filtered.filter(m => !m.standard_product_id);
+  } else if (mapCatFilter !== 'ALL') {
+    filtered = filtered.filter(m => m.channel === mapCatFilter);
+  }
+  if (mapSearchTerm) {
+    const q = mapSearchTerm.toLowerCase();
+    filtered = filtered.filter(m => m.raw_name.toLowerCase().includes(q) || (m.standard_products?.name || '').toLowerCase().includes(q));
+  }
+
+  const unmappedCount = productMappings.filter(m => !m.standard_product_id).length;
+  let html = `<div class="mgmt-bar"><span class="count">${filtered.length} 筆對照</span><button class="add-btn" onclick="openMappingForm()">＋ 新增對照</button></div>`;
+  html += `<div class="search-wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input class="search-input" placeholder="搜尋原始品名…" value="${mapSearchTerm}" oninput="mapSearchTerm=this.value;renderMapping()"></div>`;
+
+  const filterBtns = [{ v: 'ALL', l: '全部' }];
+  if (unmappedCount) filterBtns.push({ v: 'unmapped', l: `待歸類 (${unmappedCount})` });
+  channels.filter(c => c !== 'ALL').forEach(c => filterBtns.push({ v: c, l: c }));
+  if (filterBtns.length > 1) {
+    html += `<div class="cat-filter">${filterBtns.map(f => `<button class="cat-btn ${mapCatFilter === f.v ? 'active' : ''}" onclick="mapCatFilter='${f.v}';renderMapping()">${f.l}</button>`).join('')}</div>`;
+  }
+
+  if (unmappedCount && mapCatFilter !== 'unmapped') {
+    html += `<div class="map-unmapped">⚠️ ${unmappedCount} 筆品名尚未歸類</div>`;
+  }
+
+  filtered.forEach(m => {
+    const stdName = m.standard_products?.name;
+    html += `<div class="mgmt-item" onclick="openMappingForm('${m.id}')">
+      <div class="mi-info">
+        <div class="mi-name">${m.raw_name}</div>
+        <div class="mi-sub">${m.channel ? `<span class="map-tag ch">${m.channel}</span> ` : ''}→ ${stdName ? stdName : '<span class="map-tag unmapped">待歸類</span>'}</div>
+      </div>
+      <div class="mi-arrow">›</div>
+    </div>`;
+  });
+  if (!filtered.length) html += '<div class="empty-state"><div class="icon">🔗</div><div class="msg">沒有對照紀錄</div></div>';
+  return html;
+}
+
+function openStdProductForm(productId) {
+  const product = productId ? stdProducts.find(p => p.id === productId) : null;
+  const isEdit = !!product;
+  document.getElementById('formOverlay')?.remove();
+
+  const existingCats = [...new Set(stdProducts.map(p => p.category).filter(Boolean))];
+  const overlay = document.createElement('div');
+  overlay.id = 'formOverlay';
+  overlay.className = 'form-overlay show';
+  overlay.innerHTML = `
+    <div class="form-sheet">
+      <div class="form-handle"></div>
+      <div class="form-header"><div class="form-title">${isEdit ? '編輯標準品項' : '新增標準品項'}</div><button class="form-close" onclick="document.getElementById('formOverlay').remove()">✕</button></div>
+      <div class="form-body">
+        <div class="form-group"><label class="form-label">品項名稱 *</label><input class="form-input" id="spName" value="${product?.name || ''}" placeholder="例：招牌好湯鍋"></div>
+        <div class="form-group"><label class="form-label">品牌</label>
+          <div class="chip-group" id="spBrand">
+            <span class="chip ${(!product?.brand || product?.brand === '麻媽家') ? 'active' : ''}" data-val="麻媽家" onclick="selectChip('spBrand',this)">麻媽家</span>
+            <span class="chip ${product?.brand === '涼三伯' ? 'active' : ''}" data-val="涼三伯" onclick="selectChip('spBrand',this)">涼三伯</span>
+            <span class="chip ${product?.brand === '共用' ? 'active' : ''}" data-val="共用" onclick="selectChip('spBrand',this)">共用</span>
+          </div></div>
+        <div class="form-group"><label class="form-label">類別</label><input class="form-input" id="spCategory" value="${product?.category || ''}" placeholder="例：湯鍋類" list="spCatOptions">
+          <datalist id="spCatOptions">${existingCats.map(c => `<option value="${c}">`).join('')}</datalist></div>
+        <button class="form-save" onclick="saveStdProduct('${productId || ''}')">${isEdit ? '儲存變更' : '新增品項'}</button>
+        ${isEdit ? `<button class="form-delete" onclick="deleteStdProduct('${productId}')">刪除此品項</button>` : ''}
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+async function saveStdProduct(productId) {
+  const name = document.getElementById('spName').value.trim();
+  if (!name) { alert('請輸入品項名稱'); return; }
+  const brand = document.querySelector('#spBrand .chip.active')?.dataset.val || null;
+  const category = document.getElementById('spCategory').value.trim() || null;
+
+  const row = { name, brand, category };
+  let error;
+  if (productId) {
+    ({ error } = await sb.from('standard_products').update(row).eq('id', productId));
+  } else {
+    ({ error } = await sb.from('standard_products').insert(row));
+  }
+  if (error) { alert('儲存失敗：' + error.message); return; }
+  document.getElementById('formOverlay').remove();
+  loadMapping();
+}
+
+async function deleteStdProduct(productId) {
+  const mapCount = productMappings.filter(m => m.standard_product_id === productId).length;
+  if (mapCount > 0) { alert(`此品項有 ${mapCount} 筆對照關係，請先移除對照後再刪除`); return; }
+  if (!confirm('確定要刪除此標準品項？')) return;
+  const { error } = await sb.from('standard_products').delete().eq('id', productId);
+  if (error) { alert('刪除失敗：' + error.message); return; }
+  document.getElementById('formOverlay').remove();
+  loadMapping();
+}
+
+function openMappingForm(mappingId) {
+  const mapping = mappingId ? productMappings.find(m => m.id === mappingId) : null;
+  const isEdit = !!mapping;
+  document.getElementById('formOverlay')?.remove();
+
+  const channels = [...new Set(productMappings.map(m => m.channel).filter(Boolean))];
+  const overlay = document.createElement('div');
+  overlay.id = 'formOverlay';
+  overlay.className = 'form-overlay show';
+  overlay.innerHTML = `
+    <div class="form-sheet">
+      <div class="form-handle"></div>
+      <div class="form-header"><div class="form-title">${isEdit ? '編輯對照' : '新增對照'}</div><button class="form-close" onclick="document.getElementById('formOverlay').remove()">✕</button></div>
+      <div class="form-body">
+        <div class="form-group"><label class="form-label">原始品名（CSV 上的名稱）*</label><input class="form-input" id="pmRaw" value="${mapping?.raw_name || ''}" placeholder="例：(超值選)招牌好湯鍋"></div>
+        <div class="form-group"><label class="form-label">通路來源</label><input class="form-input" id="pmChannel" value="${mapping?.channel || ''}" placeholder="例：UberEats、FoodPanda、POS" list="chOptions">
+          <datalist id="chOptions">${channels.map(c => `<option value="${c}">`).join('')}</datalist></div>
+        <div class="form-group"><label class="form-label">對應標準品項</label>
+          <select class="form-select" id="pmStdId">
+            <option value="">— 待歸類 —</option>
+            ${stdProducts.filter(p => p.is_active).map(p => `<option value="${p.id}" ${mapping?.standard_product_id === p.id ? 'selected' : ''}>${p.name}${p.brand ? ' (' + p.brand + ')' : ''}</option>`).join('')}
+          </select></div>
+        <button class="form-save" onclick="saveMapping('${mappingId || ''}')">${isEdit ? '儲存變更' : '新增對照'}</button>
+        ${isEdit ? `<button class="form-delete" onclick="deleteMapping('${mappingId}')">刪除此對照</button>` : ''}
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+async function saveMapping(mappingId) {
+  const raw_name = document.getElementById('pmRaw').value.trim();
+  if (!raw_name) { alert('請輸入原始品名'); return; }
+  const channel = document.getElementById('pmChannel').value.trim() || null;
+  const standard_product_id = document.getElementById('pmStdId').value || null;
+
+  const row = { raw_name, channel, standard_product_id };
+  let error;
+  if (mappingId) {
+    ({ error } = await sb.from('product_mapping').update(row).eq('id', mappingId));
+  } else {
+    ({ error } = await sb.from('product_mapping').insert(row));
+  }
+  if (error) { alert('儲存失敗：' + error.message); return; }
+  document.getElementById('formOverlay').remove();
+  loadMapping();
+}
+
+async function deleteMapping(mappingId) {
+  if (!confirm('確定要刪除此對照？')) return;
+  const { error } = await sb.from('product_mapping').delete().eq('id', mappingId);
+  if (error) { alert('刪除失敗：' + error.message); return; }
+  document.getElementById('formOverlay').remove();
+  loadMapping();
 }
 
 // ── Enter key ──

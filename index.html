@@ -3561,7 +3561,7 @@ async function loadSop() {
   const el = document.getElementById('sopPage');
   el.innerHTML = '<div class="loading">載入中…</div>';
   const [{ data: sops }, { data: sp }] = await Promise.all([
-    sb.from('product_sop').select('*, standard_products(name, category), users:updated_by(username)').order('updated_at', { ascending: false }),
+    sb.from('product_sop').select('*, standard_products(name, category)').order('updated_at', { ascending: false }),
     sb.from('standard_products').select('*').eq('is_active', true).order('name')
   ]);
   sopList = sops || [];

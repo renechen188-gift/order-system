@@ -292,6 +292,29 @@
   .sop-step-form textarea{flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;outline:none;resize:none;height:40px}
   .sop-step-form textarea:focus{border-color:var(--accent)}
 
+  .sales-upload{padding:20px 16px;text-align:center}
+  .sales-dropzone{border:2px dashed var(--border);border-radius:12px;padding:40px 20px;cursor:pointer;transition:border-color 0.2s,background 0.2s}
+  .sales-dropzone:hover,.sales-dropzone.dragover{border-color:var(--accent);background:var(--accent-light)}
+  .sales-dropzone-icon{font-size:36px;margin-bottom:8px}
+  .sales-dropzone-text{font-size:14px;color:var(--text2)}
+  .sales-info{display:flex;gap:10px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .sales-info-item{font-size:13px;color:var(--text2);background:var(--surface2);padding:4px 10px;border-radius:6px}
+  .sales-info-item b{color:var(--text);font-weight:600}
+  .sales-preview{overflow-x:auto;font-size:13px}
+  .sales-preview table{width:100%;border-collapse:collapse;min-width:600px}
+  .sales-preview th{padding:8px 10px;text-align:left;font-weight:600;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:2px solid var(--border);position:sticky;top:0;white-space:nowrap}
+  .sales-preview td{padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+  .sales-preview tr.skipped{opacity:0.35;text-decoration:line-through}
+  .sales-preview tr:hover{background:var(--surface2)}
+  .sales-match{font-size:11px;padding:1px 6px;border-radius:4px}
+  .sales-match.yes{background:var(--green-bg);color:var(--green)}
+  .sales-match.no{background:var(--yellow-bg);color:var(--yellow)}
+  .sales-actions{padding:12px 16px;display:flex;gap:10px;background:var(--surface);border-top:1px solid var(--border);position:sticky;bottom:0}
+  .sales-history-row{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);gap:10px}
+  .sales-history-info{flex:1;min-width:0}
+  .sales-history-name{font-size:14px;font-weight:500}
+  .sales-history-sub{font-size:12px;color:var(--text3);margin-top:2px}
+
   .count-period{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between;cursor:pointer}
   .count-period:active{background:var(--surface2)}
   .count-period-info{flex:1}
@@ -394,6 +417,7 @@
   <div id="exportPage" class="page"></div>
   <div id="mappingPage" class="page"></div>
   <div id="sopPage" class="page"></div>
+  <div id="salesPage" class="page"></div>
 </div>
 
 <!-- Cart -->
@@ -495,7 +519,7 @@ async function initApp() {
 function buildTabs() {
   const tabs = [];
   if (currentUser.role === 'admin') {
-    tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'export', label: '匯出' }, { id: 'mapping', label: '品項對照' }, { id: 'sop', label: 'SOP配比' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
+    tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'export', label: '匯出' }, { id: 'mapping', label: '品項對照' }, { id: 'sop', label: 'SOP配比' }, { id: 'sales', label: '銷售匯入' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
   } else if (currentUser.role === 'ops') {
     tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'sop', label: 'SOP配比' });
   } else if (currentUser.role === 'kitchen') {
@@ -548,7 +572,7 @@ async function loadData() {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('#mainTabs .view-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['dashboard', 'order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'stock', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer', 'export', 'consume', 'mapping', 'sop'].forEach(id => {
+  ['dashboard', 'order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'stock', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer', 'export', 'consume', 'mapping', 'sop', 'sales'].forEach(id => {
     const el = document.getElementById(id + 'Page');
     if (el) el.classList.toggle('active', id === tab);
   });
@@ -570,6 +594,7 @@ function switchTab(tab) {
   if (tab === 'consume') loadConsume();
   if (tab === 'mapping') loadMapping();
   if (tab === 'sop') loadSop();
+  if (tab === 'sales') loadSales();
 }
 
 function getToday() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
@@ -3764,6 +3789,244 @@ async function deleteSop(sopId) {
   const { error } = await sb.from('product_sop').delete().eq('id', sopId);
   if (error) { alert('刪除失敗：' + error.message); return; }
   loadSop();
+}
+
+// ══════════ 銷售數據匯入 ══════════
+const SKIP_CATS = ['加購','客製化','套餐選項','贈送','辣度','醬料','湯頭','其他','貼紙','超值選選項','加購配餐'];
+let salesPreviewData = null;
+
+function loadSales() {
+  const el = document.getElementById('salesPage');
+  let html = `<div class="section-bar">銷售數據匯入</div>
+    <div class="sales-upload">
+      <div class="sales-dropzone" id="salesDropzone" onclick="document.getElementById('salesCsvFile').click()">
+        <div class="sales-dropzone-icon">📊</div>
+        <div class="sales-dropzone-text">點擊或拖曳 CSV 檔案到此處<br><span style="font-size:12px;color:var(--text3)">從 POS 後台匯出的品項統計 CSV</span></div>
+      </div>
+      <input type="file" id="salesCsvFile" accept=".csv" style="display:none" onchange="parseSalesCsv(this)">
+    </div>
+    <div id="salesPreviewArea"></div>`;
+
+  html += `<div class="section-bar">匯入紀錄</div><div id="salesHistoryArea"><div class="loading">載入中…</div></div>`;
+  el.innerHTML = html;
+
+  const dz = document.getElementById('salesDropzone');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragover'); if (e.dataTransfer.files.length) parseSalesCsvFile(e.dataTransfer.files[0]); });
+
+  loadSalesHistory();
+}
+
+async function loadSalesHistory() {
+  const { data } = await sb.from('daily_sales').select('store_id, sale_date, stores(name)').order('sale_date', { ascending: false });
+  const grouped = {};
+  (data || []).forEach(r => {
+    const key = r.store_id + '_' + r.sale_date;
+    if (!grouped[key]) grouped[key] = { store: r.stores?.name || '—', date: r.sale_date, count: 0 };
+    grouped[key].count++;
+  });
+  const rows = Object.values(grouped).sort((a, b) => b.date.localeCompare(a.date));
+  const el = document.getElementById('salesHistoryArea');
+  if (!rows.length) { el.innerHTML = '<div class="empty-state"><div class="icon">📊</div><div class="msg">尚無匯入紀錄</div></div>'; return; }
+  el.innerHTML = rows.map(r => `<div class="sales-history-row"><div class="sales-history-info"><div class="sales-history-name">${r.store} · ${r.date}</div><div class="sales-history-sub">${r.count} 筆品項</div></div></div>`).join('');
+}
+
+function parseSalesCsv(input) { if (input.files.length) parseSalesCsvFile(input.files[0]); }
+
+function parseSalesCsvFile(file) {
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    let text = e.target.result.replace(/^﻿/, '');
+    const filename = file.name;
+
+    const storeInfo = parseStoreFromFilename(filename);
+    const dateInfo = parseDateFromFilename(filename);
+
+    const rows = parseCsvText(text);
+    if (rows.length < 2) { alert('CSV 檔案格式不正確'); return; }
+
+    const headers = rows[0];
+    const nameIdx = headers.indexOf('品項');
+    const catIdx = headers.indexOf('類別');
+    const priceIdx = headers.indexOf('平均售價');
+    const revenueIdx = headers.indexOf('銷售總額');
+    const qtyIdx = headers.indexOf('銷售量');
+
+    if (nameIdx < 0 || qtyIdx < 0) { alert('找不到必要欄位（品項、銷售量）'); return; }
+
+    if (!stdProducts.length) {
+      const { data } = await sb.from('standard_products').select('*').eq('is_active', true);
+      stdProducts = data || [];
+    }
+
+    const items = [];
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (r.length <= nameIdx) continue;
+      const rawName = r[nameIdx]?.trim();
+      if (!rawName) continue;
+      const cat = catIdx >= 0 ? r[catIdx]?.trim() : '';
+      const price = parseNumericField(priceIdx >= 0 ? r[priceIdx] : '0');
+      const revenue = parseNumericField(revenueIdx >= 0 ? r[revenueIdx] : '0');
+      const qty = parseInt(qtyIdx >= 0 ? r[qtyIdx]?.replace(/,/g, '') : '0') || 0;
+
+      const isSkip = price === 0 || SKIP_CATS.some(sk => cat.includes(sk)) || /選擇|必選/.test(cat);
+      const matched = matchStdProduct(rawName);
+
+      items.push({ rawName, cat, price, revenue, qty, isSkip, matched, include: !isSkip });
+    }
+
+    salesPreviewData = { storeInfo, dateInfo, items, filename };
+    renderSalesPreview();
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+function parseCsvText(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuote = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuote) {
+      if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+      else if (c === '"') { inQuote = false; }
+      else { field += c; }
+    } else {
+      if (c === '"') { inQuote = true; }
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n' || (c === '\r' && text[i + 1] === '\n')) {
+        row.push(field); field = '';
+        if (row.some(f => f.trim())) rows.push(row);
+        row = [];
+        if (c === '\r') i++;
+      } else { field += c; }
+    }
+  }
+  if (field || row.length) { row.push(field); if (row.some(f => f.trim())) rows.push(row); }
+  return rows;
+}
+
+function parseNumericField(val) {
+  if (!val) return 0;
+  return parseFloat(String(val).replace(/,/g, '').replace(/%/g, '')) || 0;
+}
+
+function parseStoreFromFilename(name) {
+  const m = name.match(/^(.+?)_品項統計/);
+  if (!m) return null;
+  const raw = m[1].replace(/店$/, '').replace(/[-\s]/g, '');
+  const store = allStores.find(s => raw.includes(s.name) || s.name.includes(raw));
+  return store || { name: raw, id: null };
+}
+
+function parseDateFromFilename(name) {
+  const m = name.match(/(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : getToday();
+}
+
+function matchStdProduct(rawName) {
+  let best = null;
+  let bestLen = 0;
+  for (const sp of stdProducts) {
+    if (rawName.includes(sp.name) && sp.name.length > bestLen) { best = sp; bestLen = sp.name.length; }
+    if (sp.name.includes(rawName) && rawName.length > bestLen) { best = sp; bestLen = rawName.length; }
+  }
+  return best;
+}
+
+function renderSalesPreview() {
+  const d = salesPreviewData;
+  if (!d) return;
+  const el = document.getElementById('salesPreviewArea');
+  const included = d.items.filter(i => i.include);
+  const totalRev = included.reduce((s, i) => s + i.revenue, 0);
+  const totalQty = included.reduce((s, i) => s + i.qty, 0);
+  const matchedCount = included.filter(i => i.matched).length;
+
+  let html = `<div class="sales-info">
+    <div class="sales-info-item">門店：<b>${d.storeInfo?.name || '未辨識'}</b>${!d.storeInfo?.id ? ' ⚠️' : ''}</div>
+    <div class="sales-info-item">日期：<b>${d.dateInfo}</b></div>
+    <div class="sales-info-item">商品：<b>${included.length}</b> / ${d.items.length} 筆</div>
+    <div class="sales-info-item">營收：<b>$${totalRev.toLocaleString()}</b></div>
+    <div class="sales-info-item">已配對：<b>${matchedCount}</b> / ${included.length}</div>
+  </div>`;
+
+  if (!d.storeInfo?.id) {
+    html += `<div style="padding:10px 16px;background:#fff7ed;border-left:3px solid var(--yellow);font-size:13px;color:var(--yellow)">⚠️ 無法從檔名辨識門店，請手動選擇：
+      <select class="form-select" id="salesStoreSelect" style="display:inline-block;width:auto;margin-left:8px;padding:4px 8px;font-size:13px" onchange="salesPreviewData.storeInfo={id:this.value,name:this.options[this.selectedIndex].text}">
+        <option value="">— 選擇門店 —</option>
+        ${allStores.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+      </select></div>`;
+  }
+
+  html += `<div class="sales-preview"><table>
+    <tr><th style="width:30px"><input type="checkbox" checked onchange="toggleAllSales(this.checked)"></th><th>品項</th><th>類別</th><th style="text-align:right">售價</th><th style="text-align:right">營收</th><th style="text-align:right">數量</th><th>配對</th></tr>`;
+
+  d.items.forEach((item, idx) => {
+    html += `<tr class="${item.include ? '' : 'skipped'}">
+      <td><input type="checkbox" ${item.include ? 'checked' : ''} onchange="salesPreviewData.items[${idx}].include=this.checked;renderSalesPreview()"></td>
+      <td>${item.rawName}</td>
+      <td style="font-size:12px;color:var(--text3)">${item.cat}</td>
+      <td style="text-align:right">${item.price}</td>
+      <td style="text-align:right">${item.revenue.toLocaleString()}</td>
+      <td style="text-align:right">${item.qty}</td>
+      <td>${item.matched ? `<span class="sales-match yes">${item.matched.name}</span>` : '<span class="sales-match no">—</span>'}</td>
+    </tr>`;
+  });
+
+  html += '</table></div>';
+  html += `<div class="sales-actions">
+    <button class="form-save" style="flex:1;margin:0" onclick="importSalesData()">確認匯入 (${included.length} 筆)</button>
+    <button class="add-btn" style="background:var(--surface2);color:var(--text2);border:1px solid var(--border)" onclick="salesPreviewData=null;document.getElementById('salesPreviewArea').innerHTML=''">取消</button>
+  </div>`;
+
+  el.innerHTML = html;
+}
+
+function toggleAllSales(checked) {
+  salesPreviewData.items.forEach(i => { if (!i.isSkip || checked) i.include = checked; });
+  renderSalesPreview();
+}
+
+async function importSalesData() {
+  const d = salesPreviewData;
+  if (!d?.storeInfo?.id) { alert('請選擇門店'); return; }
+
+  const included = d.items.filter(i => i.include);
+  if (!included.length) { alert('沒有要匯入的品項'); return; }
+
+  const { count } = await sb.from('daily_sales').select('*', { count: 'exact', head: true }).eq('store_id', d.storeInfo.id).eq('sale_date', d.dateInfo);
+  if (count > 0) {
+    if (!confirm(`${d.storeInfo.name} 在 ${d.dateInfo} 已有 ${count} 筆資料，要覆蓋嗎？`)) return;
+    await sb.from('daily_sales').delete().eq('store_id', d.storeInfo.id).eq('sale_date', d.dateInfo);
+  }
+
+  const rows = included.map(i => ({
+    store_id: d.storeInfo.id,
+    sale_date: d.dateInfo,
+    raw_name: i.rawName,
+    standard_product_id: i.matched?.id || null,
+    category: i.cat || null,
+    avg_price: i.price,
+    total_revenue: i.revenue,
+    quantity: i.qty
+  }));
+
+  const batchSize = 50;
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize);
+    const { error } = await sb.from('daily_sales').insert(batch);
+    if (error) { alert(`匯入第 ${i+1}-${i+batch.length} 筆失敗：` + error.message); return; }
+  }
+
+  alert(`成功匯入 ${rows.length} 筆銷售資料`);
+  salesPreviewData = null;
+  document.getElementById('salesPreviewArea').innerHTML = '';
+  document.getElementById('salesCsvFile').value = '';
+  loadSalesHistory();
 }
 
 // ── Enter key ──

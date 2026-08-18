@@ -315,6 +315,17 @@
   .sales-history-name{font-size:14px;font-weight:500}
   .sales-history-sub{font-size:12px;color:var(--text3);margin-top:2px}
 
+  .prep-item{display:flex;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--surface);gap:12px}
+  .prep-item-name{flex:1;font-size:15px;font-weight:500}
+  .prep-item-unit{font-size:13px;color:var(--text3);min-width:30px;text-align:right}
+  .prep-input{width:80px;height:40px;border:1.5px solid var(--border);border-radius:8px;text-align:center;font-size:16px;font-weight:600;font-family:inherit;outline:none;color:var(--text);background:var(--surface2)}
+  .prep-input:focus{border-color:var(--accent);background:var(--surface)}
+  .prep-input.filled{border-color:var(--green);background:var(--green-bg);color:var(--green)}
+  .prep-date-nav{display:flex;align-items:center;justify-content:center;gap:12px;padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--border)}
+  .prep-date-btn{width:36px;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:18px;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .prep-date-btn:active{background:var(--surface2)}
+  .prep-date-label{font-size:15px;font-weight:600;min-width:120px;text-align:center}
+
   .count-period{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between;cursor:pointer}
   .count-period:active{background:var(--surface2)}
   .count-period-info{flex:1}
@@ -418,6 +429,8 @@
   <div id="mappingPage" class="page"></div>
   <div id="sopPage" class="page"></div>
   <div id="salesPage" class="page"></div>
+  <div id="prepPage" class="page"></div>
+  <div id="wastePage" class="page"></div>
 </div>
 
 <!-- Cart -->
@@ -519,9 +532,9 @@ async function initApp() {
 function buildTabs() {
   const tabs = [];
   if (currentUser.role === 'admin') {
-    tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'export', label: '匯出' }, { id: 'mapping', label: '品項對照' }, { id: 'sop', label: 'SOP配比' }, { id: 'sales', label: '銷售匯入' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
+    tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'price', label: '價格審核' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'export', label: '匯出' }, { id: 'mapping', label: '品項對照' }, { id: 'sop', label: 'SOP配比' }, { id: 'sales', label: '銷售匯入' }, { id: 'prep', label: '備料' }, { id: 'waste', label: '報廢' }, { id: 'items', label: '品項管理' }, { id: 'suppliers', label: '廠商管理' }, { id: 'config', label: '配送設定' });
   } else if (currentUser.role === 'ops') {
-    tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'sop', label: 'SOP配比' });
+    tabs.push({ id: 'dashboard', label: '總覽' }, { id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'summary', label: '廠商彙總' }, { id: 'kitchenSummary', label: '央廚彙總' }, { id: 'sop', label: 'SOP配比' }, { id: 'prep', label: '備料' }, { id: 'waste', label: '報廢' });
   } else if (currentUser.role === 'kitchen') {
     tabs.push({ id: 'fulfill', label: '門店出貨' }, { id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'sop', label: 'SOP配比' });
   } else if (currentUser.role === 'kitchen_fulfill') {
@@ -529,7 +542,7 @@ function buildTabs() {
   } else if (currentUser.role === 'kitchen_order') {
     tabs.push({ id: 'order', label: '廚房叫貨' }, { id: 'receive', label: '廚房收貨' }, { id: 'consume', label: '領料' }, { id: 'stock', label: '庫存' }, { id: 'sop', label: 'SOP配比' });
   } else {
-    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'sop', label: 'SOP配比' });
+    tabs.push({ id: 'order', label: '叫貨' }, { id: 'receive', label: '收貨' }, { id: 'history', label: '紀錄' }, { id: 'stock', label: '庫存' }, { id: 'count', label: '盤點' }, { id: 'transfer', label: '調撥' }, { id: 'sop', label: 'SOP配比' }, { id: 'prep', label: '備料' }, { id: 'waste', label: '報廢' });
   }
 
   document.getElementById('mainTabs').innerHTML = tabs.map((t, i) =>
@@ -572,7 +585,7 @@ async function loadData() {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('#mainTabs .view-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['dashboard', 'order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'stock', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer', 'export', 'consume', 'mapping', 'sop', 'sales'].forEach(id => {
+  ['dashboard', 'order', 'receive', 'history', 'summary', 'kitchenSummary', 'price', 'stock', 'fulfill', 'items', 'suppliers', 'config', 'count', 'transfer', 'export', 'consume', 'mapping', 'sop', 'sales', 'prep', 'waste'].forEach(id => {
     const el = document.getElementById(id + 'Page');
     if (el) el.classList.toggle('active', id === tab);
   });
@@ -595,6 +608,8 @@ function switchTab(tab) {
   if (tab === 'mapping') loadMapping();
   if (tab === 'sop') loadSop();
   if (tab === 'sales') loadSales();
+  if (tab === 'prep') loadPrep();
+  if (tab === 'waste') loadWaste();
 }
 
 function getToday() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
@@ -4027,6 +4042,196 @@ async function importSalesData() {
   document.getElementById('salesPreviewArea').innerHTML = '';
   document.getElementById('salesCsvFile').value = '';
   loadSalesHistory();
+}
+
+// ══════════ 備料登記 ══════════
+const CORE_ITEMS = [
+  { name: '嫩雞胸肉', unit: 'g' },
+  { name: '豬肉片', unit: 'g' },
+  { name: '牛肉片', unit: 'g' },
+  { name: '涼皮', unit: '份' },
+  { name: '湯底', unit: '鍋' },
+  { name: '滷蛋', unit: '顆' },
+  { name: '鴨血', unit: '份' },
+  { name: '涼麵', unit: '份' },
+  { name: '白飯', unit: '鍋' },
+  { name: '咖哩醬', unit: '份' }
+];
+let prepDate = getToday();
+let prepStoreId = null;
+
+async function loadPrep() {
+  const el = document.getElementById('prepPage');
+  const isAdmin = currentUser.role === 'admin' || currentUser.role === 'ops';
+  prepStoreId = isAdmin ? (prepStoreId || allStores[0]?.id) : currentUser.store_id;
+
+  let html = '';
+  if (isAdmin) {
+    html += `<div style="padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border)">
+      <select class="form-select" onchange="prepStoreId=this.value;loadPrep()" style="font-size:14px">
+        ${allStores.map(s => `<option value="${s.id}" ${prepStoreId === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}
+      </select></div>`;
+  }
+
+  html += `<div class="prep-date-nav">
+    <button class="prep-date-btn" onclick="shiftPrepDate(-1)">‹</button>
+    <span class="prep-date-label">${prepDate}</span>
+    <button class="prep-date-btn" onclick="shiftPrepDate(1)">›</button>
+  </div>`;
+
+  const { data: existing } = await sb.from('prep_records').select('*').eq('store_id', prepStoreId).eq('prep_date', prepDate);
+  const existingMap = {};
+  (existing || []).forEach(r => { existingMap[r.item_name] = r; });
+
+  html += '<div class="section-bar">核心食材備料量</div>';
+  CORE_ITEMS.forEach((item, idx) => {
+    const rec = existingMap[item.name];
+    const val = rec ? rec.quantity : '';
+    const filled = val !== '' && val > 0;
+    html += `<div class="prep-item">
+      <div class="prep-item-name">${item.name}</div>
+      <input type="number" class="prep-input ${filled ? 'filled' : ''}" id="prepQty${idx}" value="${val}" placeholder="0" inputmode="decimal"
+        onfocus="this.select()" onchange="this.classList.toggle('filled',!!this.value&&this.value>0)">
+      <div class="prep-item-unit">${item.unit}</div>
+    </div>`;
+  });
+
+  html += `<div style="padding:16px"><button class="form-save" onclick="savePrep()">儲存備料紀錄</button></div>`;
+  el.innerHTML = html;
+}
+
+function shiftPrepDate(delta) {
+  const d = new Date(prepDate);
+  d.setDate(d.getDate() + delta);
+  prepDate = d.toISOString().slice(0, 10);
+  loadPrep();
+}
+
+async function savePrep() {
+  if (!prepStoreId) { alert('請選擇門店'); return; }
+  const rows = [];
+  CORE_ITEMS.forEach((item, idx) => {
+    const val = parseFloat(document.getElementById('prepQty' + idx).value) || 0;
+    if (val > 0) {
+      rows.push({
+        store_id: prepStoreId,
+        prep_date: prepDate,
+        item_name: item.name,
+        quantity: val,
+        unit: item.unit,
+        recorded_by: currentUser.id
+      });
+    }
+  });
+
+  if (!rows.length) { alert('請至少填一項備料量'); return; }
+
+  await sb.from('prep_records').delete().eq('store_id', prepStoreId).eq('prep_date', prepDate);
+
+  const { error } = await sb.from('prep_records').insert(rows);
+  if (error) { alert('儲存失敗：' + error.message); return; }
+  alert('備料紀錄已儲存');
+  loadPrep();
+}
+
+// ══════════ 報廢登記 ══════════
+const WASTE_REASONS = ['剩餘', '過期', '製作失敗', '其他'];
+let wasteStoreId = null;
+let wasteDate = getToday();
+
+async function loadWaste() {
+  const el = document.getElementById('wastePage');
+  const isAdmin = currentUser.role === 'admin' || currentUser.role === 'ops';
+  wasteStoreId = isAdmin ? (wasteStoreId || allStores[0]?.id) : currentUser.store_id;
+
+  let html = '';
+  if (isAdmin) {
+    html += `<div style="padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border)">
+      <select class="form-select" onchange="wasteStoreId=this.value;loadWaste()" style="font-size:14px">
+        ${allStores.map(s => `<option value="${s.id}" ${wasteStoreId === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}
+      </select></div>`;
+  }
+
+  html += `<div class="prep-date-nav">
+    <button class="prep-date-btn" onclick="shiftWasteDate(-1)">‹</button>
+    <span class="prep-date-label">${wasteDate}</span>
+    <button class="prep-date-btn" onclick="shiftWasteDate(1)">›</button>
+  </div>`;
+
+  const { data: existing } = await sb.from('waste_records').select('*').eq('store_id', wasteStoreId).eq('waste_date', wasteDate).order('recorded_at');
+  const records = existing || [];
+
+  html += `<div class="section-bar">新增報廢</div>
+    <div style="padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--border)">
+      <div class="form-row" style="margin-bottom:8px">
+        <div class="form-group" style="margin:0"><select class="form-select" id="wasteItem" style="font-size:14px">
+          ${CORE_ITEMS.map(i => `<option value="${i.name}" data-unit="${i.unit}">${i.name}</option>`).join('')}
+        </select></div>
+        <div class="form-group" style="margin:0;display:flex;gap:6px">
+          <input type="number" class="form-input" id="wasteQty" placeholder="數量" inputmode="decimal" style="flex:1">
+          <span id="wasteUnit" style="font-size:13px;color:var(--text3);display:flex;align-items:center;min-width:30px">${CORE_ITEMS[0].unit}</span>
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:8px">
+        <div class="form-group" style="margin:0"><select class="form-select" id="wasteReason" style="font-size:14px">
+          ${WASTE_REASONS.map(r => `<option>${r}</option>`).join('')}
+        </select></div>
+        <div class="form-group" style="margin:0"><button class="add-btn" style="width:100%;padding:10px" onclick="addWaste()">＋ 登記</button></div>
+      </div>
+    </div>`;
+
+  if (records.length) {
+    html += '<div class="section-bar">今日報廢紀錄</div>';
+    records.forEach(r => {
+      html += `<div class="prep-item">
+        <div class="prep-item-name">${r.item_name}<div style="font-size:12px;color:var(--text3);margin-top:2px">${r.reason}</div></div>
+        <div style="font-size:16px;font-weight:700;color:var(--red)">${r.quantity} ${r.unit}</div>
+        <button class="sop-rm-btn" onclick="deleteWaste('${r.id}')">✕</button>
+      </div>`;
+    });
+  } else {
+    html += '<div class="empty-state"><div class="icon">✅</div><div class="msg">今日無報廢紀錄</div></div>';
+  }
+
+  el.innerHTML = html;
+  document.getElementById('wasteItem')?.addEventListener('change', function() {
+    const opt = this.options[this.selectedIndex];
+    document.getElementById('wasteUnit').textContent = opt.dataset.unit;
+  });
+}
+
+function shiftWasteDate(delta) {
+  const d = new Date(wasteDate);
+  d.setDate(d.getDate() + delta);
+  wasteDate = d.toISOString().slice(0, 10);
+  loadWaste();
+}
+
+async function addWaste() {
+  const itemName = document.getElementById('wasteItem').value;
+  const qty = parseFloat(document.getElementById('wasteQty').value);
+  if (!qty || qty <= 0) { alert('請輸入數量'); return; }
+  const unit = document.getElementById('wasteUnit').textContent;
+  const reason = document.getElementById('wasteReason').value;
+
+  const { error } = await sb.from('waste_records').insert({
+    store_id: wasteStoreId,
+    waste_date: wasteDate,
+    item_name: itemName,
+    quantity: qty,
+    unit,
+    reason,
+    recorded_by: currentUser.id
+  });
+  if (error) { alert('登記失敗：' + error.message); return; }
+  document.getElementById('wasteQty').value = '';
+  loadWaste();
+}
+
+async function deleteWaste(id) {
+  if (!confirm('確定刪除此筆報廢紀錄？')) return;
+  await sb.from('waste_records').delete().eq('id', id);
+  loadWaste();
 }
 
 // ── Enter key ──

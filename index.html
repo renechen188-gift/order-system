@@ -875,33 +875,58 @@ async function loadReceive() {
   if (currentUser.store_id) query = query.eq('store_id', currentUser.store_id);
   const { data: orders } = await query;
   const directBtn = currentUser.store_id ? `<div style="padding:8px 16px"><button class="card-btn" style="width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:600;border:1.5px dashed var(--accent);background:var(--surface);color:var(--accent);cursor:pointer" onclick="openDirectReceive()">＋ 補登收貨（已自行向廠商取貨）</button></div>` : '';
-  if (!orders?.length) { el.innerHTML = '<div class="section-bar">待收貨訂單</div>' + directBtn + '<div class="empty-state"><div class="icon">📦</div><div class="msg">目前沒有待收貨訂單</div></div>'; return; }
-
   let html = '<div class="section-bar">待收貨訂單</div>' + directBtn;
-  orders.forEach(order => {
-    const supGroups = {};
-    (order.order_items || []).filter(oi => oi.status !== 'received' && oi.status !== 'cancelled').forEach(oi => {
-      const sn = getSupplierName(oi.supplier_id) || '未指定';
-      if (!supGroups[sn]) supGroups[sn] = []; supGroups[sn].push(oi);
-    });
-    for (const [supName, items] of Object.entries(supGroups)) {
-      html += `<div class="card"><div class="card-header"><div class="card-header-left"><div class="card-supplier">${supName}</div><div class="card-date">${order.stores?.name || ''} · ${order.order_date}</div></div><span class="card-status status-pending">待確認</span></div>`;
-      items.forEach(oi => {
-        const item = oi.items;
-        const isExternal = allSuppliers.find(s => s.id === oi.supplier_id)?.type !== 'central_kitchen';
-        const sysPrice = item?.purchase_price;
-        const hasSys = sysPrice != null;
-        const prevRcv = oi.received_qty || 0;
-        const remain = oi.ordered_qty - prevRcv;
-        const shortLabel = prevRcv > 0 ? `<span style="font-size:11px;color:var(--red);font-weight:600">已收${prevRcv}／叫${oi.ordered_qty}，待收${remain}</span>` : '';
-        const cancelHtml = (currentUser.role === 'admin' || currentUser.role === 'ops') ? `<button class="rcv-item-btn" style="background:var(--red-bg);color:var(--red)" onclick="cancelOrderItem('${oi.id}','${order.id}')" title="不到貨">✕</button>` : oi.cancel_requested ? `<span style="font-size:11px;color:#f59e0b;font-weight:600;white-space:nowrap">⏳取消中</span>` : `<button class="rcv-item-btn" style="background:var(--red-bg);color:var(--red)" onclick="requestCancelItem('${oi.id}')" title="申請取消">✕</button>`;
-        html += `<div class="rcv-row" id="rcv_${oi.id}"><div class="rcv-top"><div class="rcv-name">${item?.name || ''}${shortLabel ? '<br>' + shortLabel : ''}</div><div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;color:var(--text3)">${prevRcv > 0 ? '待' + remain : '叫' + oi.ordered_qty}</span><input type="number" class="cr-input" value="${remain}" inputmode="decimal" data-exp="${remain}" data-oiid="${oi.id}" data-itemid="${item?.id || ''}" data-prev="${prevRcv}" data-ordered="${oi.ordered_qty}" onfocus="this.select()" oninput="this.classList.toggle('short',parseFloat(this.value)<parseFloat(this.dataset.exp))"><span style="font-size:12px;color:var(--text3)">${item?.unit || ''}</span><button class="rcv-item-btn" onclick="confirmOneItem(this,'${oi.id}','${order.id}')">✓</button>${cancelHtml}</div></div>`;
-        if (isExternal) html += `<div class="rcv-bottom"><span class="rcv-price-sys">${hasSys ? '系統價 $' + sysPrice : '系統價 未設定'}</span><span class="rcv-price-sys">→ 送貨價</span><input type="number" class="rcv-price-input" value="${hasSys ? sysPrice : ''}" placeholder="填入" inputmode="decimal" data-sys="${hasSys ? sysPrice : ''}" data-itemid="${item?.id || ''}" onfocus="this.select()" oninput="let s=this.dataset.sys,c=this.value;this.classList.toggle('changed',s!==''&&c!==s);let a=this.parentElement.querySelector('.rcv-alert');if(a)a.classList.toggle('show',s!==''&&c!==s)"><span class="rcv-alert">⚠️ 價差</span></div>`;
-        html += '</div>';
+  if (!orders?.length) {
+    html += '<div class="empty-state"><div class="icon">📦</div><div class="msg">目前沒有待收貨訂單</div></div>';
+  } else {
+    orders.forEach(order => {
+      const supGroups = {};
+      (order.order_items || []).filter(oi => oi.status !== 'received' && oi.status !== 'cancelled').forEach(oi => {
+        const sn = getSupplierName(oi.supplier_id) || '未指定';
+        if (!supGroups[sn]) supGroups[sn] = []; supGroups[sn].push(oi);
       });
-      html += `<div class="card-actions"><button class="card-btn btn-green" onclick="confirmReceive(this,'${order.id}')">一鍵全部確認收貨</button></div></div>`;
+      for (const [supName, items] of Object.entries(supGroups)) {
+        html += `<div class="card"><div class="card-header"><div class="card-header-left"><div class="card-supplier">${supName}</div><div class="card-date">${order.stores?.name || ''} · ${order.order_date}</div></div><span class="card-status status-pending">待確認</span></div>`;
+        items.forEach(oi => {
+          const item = oi.items;
+          const isExternal = allSuppliers.find(s => s.id === oi.supplier_id)?.type !== 'central_kitchen';
+          const sysPrice = item?.purchase_price;
+          const hasSys = sysPrice != null;
+          const prevRcv = oi.received_qty || 0;
+          const remain = oi.ordered_qty - prevRcv;
+          const shortLabel = prevRcv > 0 ? `<span style="font-size:11px;color:var(--red);font-weight:600">已收${prevRcv}／叫${oi.ordered_qty}，待收${remain}</span>` : '';
+          const cancelHtml = (currentUser.role === 'admin' || currentUser.role === 'ops') ? `<button class="rcv-item-btn" style="background:var(--red-bg);color:var(--red)" onclick="cancelOrderItem('${oi.id}','${order.id}')" title="不到貨">✕</button>` : oi.cancel_requested ? `<span style="font-size:11px;color:#f59e0b;font-weight:600;white-space:nowrap">⏳取消中</span>` : `<button class="rcv-item-btn" style="background:var(--red-bg);color:var(--red)" onclick="requestCancelItem('${oi.id}')" title="申請取消">✕</button>`;
+          html += `<div class="rcv-row" id="rcv_${oi.id}"><div class="rcv-top"><div class="rcv-name">${item?.name || ''}${shortLabel ? '<br>' + shortLabel : ''}</div><div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;color:var(--text3)">${prevRcv > 0 ? '待' + remain : '叫' + oi.ordered_qty}</span><input type="number" class="cr-input" value="${remain}" inputmode="decimal" data-exp="${remain}" data-oiid="${oi.id}" data-itemid="${item?.id || ''}" data-prev="${prevRcv}" data-ordered="${oi.ordered_qty}" onfocus="this.select()" oninput="this.classList.toggle('short',parseFloat(this.value)<parseFloat(this.dataset.exp))"><span style="font-size:12px;color:var(--text3)">${item?.unit || ''}</span><button class="rcv-item-btn" onclick="confirmOneItem(this,'${oi.id}','${order.id}')">✓</button>${cancelHtml}</div></div>`;
+          if (isExternal) html += `<div class="rcv-bottom"><span class="rcv-price-sys">${hasSys ? '系統價 $' + sysPrice : '系統價 未設定'}</span><span class="rcv-price-sys">→ 送貨價</span><input type="number" class="rcv-price-input" value="${hasSys ? sysPrice : ''}" placeholder="填入" inputmode="decimal" data-sys="${hasSys ? sysPrice : ''}" data-itemid="${item?.id || ''}" onfocus="this.select()" oninput="let s=this.dataset.sys,c=this.value;this.classList.toggle('changed',s!==''&&c!==s);let a=this.parentElement.querySelector('.rcv-alert');if(a)a.classList.toggle('show',s!==''&&c!==s)"><span class="rcv-alert">⚠️ 價差</span></div>`;
+          html += '</div>';
+        });
+        html += `<div class="card-actions"><button class="card-btn btn-green" onclick="confirmReceive(this,'${order.id}')">一鍵全部確認收貨</button></div></div>`;
+      }
+    });
+  }
+
+  if (currentUser.store_id) {
+    const d3 = new Date(); d3.setDate(d3.getDate() - 3);
+    const { data: rcvOrders } = await sb.from('orders').select('*, order_items(*, items(*))').eq('store_id', currentUser.store_id).gte('order_date', d3.toISOString().slice(0, 10)).order('order_date', { ascending: false });
+    const recentItems = [];
+    (rcvOrders || []).forEach(o => {
+      (o.order_items || []).filter(oi => oi.status === 'received').forEach(oi => {
+        recentItems.push({ ...oi, orderDate: o.order_date, orderId: o.id });
+      });
+    });
+    if (recentItems.length) {
+      html += `<div class="section-bar" style="margin-top:16px;cursor:pointer" onclick="const l=document.getElementById('recentRcvList');l.style.display=l.style.display==='none'?'block':'none'">📋 最近已收貨（${recentItems.length} 筆）點擊展開 ▾</div><div id="recentRcvList" style="display:none">`;
+      recentItems.forEach(ri => {
+        const item = ri.items;
+        const undoBtn = ri.undo_requested
+          ? `<span style="font-size:11px;color:#f59e0b;font-weight:600">⏳撤銷中</span>`
+          : `<button style="padding:4px 10px;border:1px solid var(--red);border-radius:6px;background:var(--red-bg);color:var(--red);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit" onclick="requestUndoReceive('${ri.id}')">撤銷</button>`;
+        html += `<div class="card" style="margin:4px 16px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center" id="undo-${ri.id}"><div><div style="font-size:14px;font-weight:600">${item?.name || ''}</div><div style="font-size:11px;color:var(--text3)">${ri.orderDate} · 已收 ${ri.received_qty} ${item?.unit || ''}</div></div>${undoBtn}</div>`;
+      });
+      html += '</div>';
     }
-  });
+  }
+
   el.innerHTML = html;
 }
 
@@ -970,6 +995,27 @@ async function loadReceiveOverview() {
           <div style="display:flex;gap:8px;margin-top:8px">
             <button class="pri-btn approve" onclick="reviewCancelRequest('${cr.id}','${cr.orders?.id}',true)">✓ 同意取消</button>
             <button class="pri-btn reject" onclick="reviewCancelRequest('${cr.id}','${cr.orders?.id}',false)">✗ 駁回</button>
+          </div>
+        </div></div>`;
+    });
+    html += '</div>';
+  }
+
+  const { data: undoReqs } = await sb.from('order_items').select('id, ordered_qty, received_qty, undo_reason, items(name, unit), orders!inner(id, order_date, stores(name))').eq('undo_requested', true).eq('status', 'received');
+  if (undoReqs?.length) {
+    html += `<div class="undo-req-section"><div class="section-bar" style="margin-top:16px">⏪ 撤銷收貨待審核（<span id="undoReqCount">${undoReqs.length}</span> 筆）</div>`;
+    undoReqs.forEach(ur => {
+      html += `<div class="card" style="margin:8px 16px;border-left:3px solid var(--purple)" id="ur-${ur.id}">
+        <div style="padding:12px 16px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:15px;font-weight:700">${ur.items?.name || ''}</div>
+            <div style="font-size:14px;color:var(--text2)">已收 ${ur.received_qty} ${ur.items?.unit || ''}</div>
+          </div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px">${ur.orders?.stores?.name || ''} · ${ur.orders?.order_date || ''}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:4px;padding:6px 8px;background:var(--surface2);border-radius:6px">📝 ${ur.undo_reason || '未填原因'}</div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="pri-btn approve" onclick="reviewUndoRequest('${ur.id}','${ur.orders?.id}',true)">✓ 同意撤銷</button>
+            <button class="pri-btn reject" onclick="reviewUndoRequest('${ur.id}','${ur.orders?.id}',false)">✗ 駁回</button>
           </div>
         </div></div>`;
     });
@@ -1132,6 +1178,41 @@ async function reviewCancelRequest(oiId, orderId, approved) {
       const remaining = document.querySelectorAll('[id^="cr-"]').length;
       countEl.textContent = remaining;
       if (!remaining) { const sec = countEl.closest('.cancel-req-section'); if (sec) sec.remove(); }
+    }
+  } catch (err) { alert('審核失敗：' + err.message); }
+}
+
+async function requestUndoReceive(oiId) {
+  const reason = prompt('請輸入撤銷收貨原因（例：誤按、尚未到貨）');
+  if (reason === null) return;
+  try {
+    const { error } = await sb.from('order_items').update({ undo_requested: true, undo_reason: reason || '未填原因' }).eq('id', oiId);
+    if (error) throw error;
+    const card = document.getElementById('undo-' + oiId);
+    if (card) {
+      const btn = card.querySelector('button');
+      if (btn) { const span = document.createElement('span'); span.style.cssText = 'font-size:11px;color:#f59e0b;font-weight:600'; span.textContent = '⏳撤銷中'; btn.replaceWith(span); }
+    }
+    alert('已提交撤銷申請，等待管理者審核');
+  } catch (err) { alert('申請失敗：' + err.message); }
+}
+
+async function reviewUndoRequest(oiId, orderId, approved) {
+  try {
+    if (approved) {
+      await sb.from('order_items').update({ status: 'pending', received_qty: 0, received_by: null, received_at: null, undo_requested: false, undo_reason: null }).eq('id', oiId);
+      await sb.from('stock_ledger').delete().eq('ref_type', 'order_item').eq('ref_id', oiId);
+      await sb.from('orders').update({ status: 'submitted', updated_at: new Date().toISOString() }).eq('id', orderId);
+    } else {
+      await sb.from('order_items').update({ undo_requested: false, undo_reason: null }).eq('id', oiId);
+    }
+    const card = document.getElementById('ur-' + oiId);
+    if (card) card.remove();
+    const countEl = document.getElementById('undoReqCount');
+    if (countEl) {
+      const remaining = document.querySelectorAll('[id^="ur-"]').length;
+      countEl.textContent = remaining;
+      if (!remaining) { const sec = countEl.closest('.undo-req-section'); if (sec) sec.remove(); }
     }
   } catch (err) { alert('審核失敗：' + err.message); }
 }

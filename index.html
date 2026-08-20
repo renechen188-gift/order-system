@@ -894,7 +894,8 @@ async function loadReceive() {
         const prevRcv = oi.received_qty || 0;
         const remain = oi.ordered_qty - prevRcv;
         const shortLabel = prevRcv > 0 ? `<span style="font-size:11px;color:var(--red);font-weight:600">已收${prevRcv}／叫${oi.ordered_qty}，待收${remain}</span>` : '';
-        html += `<div class="rcv-row" id="rcv_${oi.id}"><div class="rcv-top"><div class="rcv-name">${item?.name || ''}${shortLabel ? '<br>' + shortLabel : ''}</div><div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;color:var(--text3)">${prevRcv > 0 ? '待' + remain : '叫' + oi.ordered_qty}</span><input type="number" class="cr-input" value="${remain}" inputmode="decimal" data-exp="${remain}" data-oiid="${oi.id}" data-itemid="${item?.id || ''}" data-prev="${prevRcv}" data-ordered="${oi.ordered_qty}" onfocus="this.select()" oninput="this.classList.toggle('short',parseFloat(this.value)<parseFloat(this.dataset.exp))"><span style="font-size:12px;color:var(--text3)">${item?.unit || ''}</span><button class="rcv-item-btn" onclick="confirmOneItem(this,'${oi.id}','${order.id}')">✓</button><button class="rcv-item-btn" style="background:var(--red-bg);color:var(--red)" onclick="cancelOrderItem('${oi.id}','${order.id}')" title="不到貨">✕</button></div></div>`;
+        const cancelHtml = (currentUser.role === 'admin' || currentUser.role === 'ops') ? `<button class="rcv-item-btn" style="background:var(--red-bg);color:var(--red)" onclick="cancelOrderItem('${oi.id}','${order.id}')" title="不到貨">✕</button>` : oi.cancel_requested ? `<span style="font-size:11px;color:#f59e0b;font-weight:600;white-space:nowrap">⏳取消中</span>` : `<button class="rcv-item-btn" style="background:var(--red-bg);color:var(--red)" onclick="requestCancelItem('${oi.id}')" title="申請取消">✕</button>`;
+        html += `<div class="rcv-row" id="rcv_${oi.id}"><div class="rcv-top"><div class="rcv-name">${item?.name || ''}${shortLabel ? '<br>' + shortLabel : ''}</div><div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;color:var(--text3)">${prevRcv > 0 ? '待' + remain : '叫' + oi.ordered_qty}</span><input type="number" class="cr-input" value="${remain}" inputmode="decimal" data-exp="${remain}" data-oiid="${oi.id}" data-itemid="${item?.id || ''}" data-prev="${prevRcv}" data-ordered="${oi.ordered_qty}" onfocus="this.select()" oninput="this.classList.toggle('short',parseFloat(this.value)<parseFloat(this.dataset.exp))"><span style="font-size:12px;color:var(--text3)">${item?.unit || ''}</span><button class="rcv-item-btn" onclick="confirmOneItem(this,'${oi.id}','${order.id}')">✓</button>${cancelHtml}</div></div>`;
         if (isExternal) html += `<div class="rcv-bottom"><span class="rcv-price-sys">${hasSys ? '系統價 $' + sysPrice : '系統價 未設定'}</span><span class="rcv-price-sys">→ 送貨價</span><input type="number" class="rcv-price-input" value="${hasSys ? sysPrice : ''}" placeholder="填入" inputmode="decimal" data-sys="${hasSys ? sysPrice : ''}" data-itemid="${item?.id || ''}" onfocus="this.select()" oninput="let s=this.dataset.sys,c=this.value;this.classList.toggle('changed',s!==''&&c!==s);let a=this.parentElement.querySelector('.rcv-alert');if(a)a.classList.toggle('show',s!==''&&c!==s)"><span class="rcv-alert">⚠️ 價差</span></div>`;
         html += '</div>';
       });
@@ -952,6 +953,27 @@ async function loadReceiveOverview() {
         ${dr.reason ? `<div style="font-size:12px;color:var(--text2);margin-top:4px;padding:6px 8px;background:var(--surface2);border-radius:6px">📝 ${dr.reason}</div>` : ''}
         <div style="display:flex;gap:8px;margin-top:8px"><button class="pri-btn approve" onclick="reviewDirectReceive('${dr.id}','approved')">✓ 核准入庫</button><button class="pri-btn reject" onclick="reviewDirectReceive('${dr.id}','rejected')">✗ 駁回</button></div></div></div>`;
     });
+  }
+
+  const { data: cancelReqs } = await sb.from('order_items').select('id, ordered_qty, cancel_reason, items(name, unit), orders!inner(id, order_date, stores(name))').eq('cancel_requested', true).neq('status', 'cancelled');
+  if (cancelReqs?.length) {
+    html += `<div class="cancel-req-section"><div class="section-bar" style="margin-top:16px">🚫 取消申請待審核（<span id="cancelReqCount">${cancelReqs.length}</span> 筆）</div>`;
+    cancelReqs.forEach(cr => {
+      html += `<div class="card" style="margin:8px 16px;border-left:3px solid var(--red)" id="cr-${cr.id}">
+        <div style="padding:12px 16px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:15px;font-weight:700">${cr.items?.name || ''}</div>
+            <div style="font-size:14px;color:var(--text2)">叫 ${cr.ordered_qty} ${cr.items?.unit || ''}</div>
+          </div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px">${cr.orders?.stores?.name || ''} · ${cr.orders?.order_date || ''}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:4px;padding:6px 8px;background:var(--surface2);border-radius:6px">📝 ${cr.cancel_reason || '未填原因'}</div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="pri-btn approve" onclick="reviewCancelRequest('${cr.id}','${cr.orders?.id}',true)">✓ 同意取消</button>
+            <button class="pri-btn reject" onclick="reviewCancelRequest('${cr.id}','${cr.orders?.id}',false)">✗ 駁回</button>
+          </div>
+        </div></div>`;
+    });
+    html += '</div>';
   }
 
   el.innerHTML = html;
@@ -1068,6 +1090,50 @@ async function cancelOrderItem(oiId, orderId) {
       await sb.from('orders').update({ status: 'received', updated_at: new Date().toISOString() }).eq('id', orderId);
     }
   } catch (err) { alert('取消失敗：' + err.message); }
+}
+
+async function requestCancelItem(oiId) {
+  const reason = prompt('請輸入取消原因（例：廠商缺貨、不再補貨）');
+  if (reason === null) return;
+  try {
+    const { error } = await sb.from('order_items').update({ cancel_requested: true, cancel_reason: reason || '未填原因' }).eq('id', oiId);
+    if (error) throw error;
+    const row = document.getElementById('rcv_' + oiId);
+    if (row) {
+      const btnArea = row.querySelector('.rcv-top > div:last-child');
+      const oldBtn = btnArea?.querySelector('[title="申請取消"]');
+      if (oldBtn) {
+        const span = document.createElement('span');
+        span.style.cssText = 'font-size:11px;color:#f59e0b;font-weight:600;white-space:nowrap';
+        span.textContent = '⏳取消中';
+        oldBtn.replaceWith(span);
+      }
+    }
+    alert('已提交取消申請，等待管理者審核');
+  } catch (err) { alert('申請失敗：' + err.message); }
+}
+
+async function reviewCancelRequest(oiId, orderId, approved) {
+  try {
+    if (approved) {
+      const { error } = await sb.from('order_items').update({ status: 'cancelled', cancel_requested: false }).eq('id', oiId);
+      if (error) throw error;
+      const { data: allOi } = await sb.from('order_items').select('status').eq('order_id', orderId);
+      const allDone = allOi?.every(oi => oi.status === 'received' || oi.status === 'cancelled');
+      if (allDone) await sb.from('orders').update({ status: 'received', updated_at: new Date().toISOString() }).eq('id', orderId);
+    } else {
+      const { error } = await sb.from('order_items').update({ cancel_requested: false, cancel_reason: null }).eq('id', oiId);
+      if (error) throw error;
+    }
+    const card = document.getElementById('cr-' + oiId);
+    if (card) card.remove();
+    const countEl = document.getElementById('cancelReqCount');
+    if (countEl) {
+      const remaining = document.querySelectorAll('[id^="cr-"]').length;
+      countEl.textContent = remaining;
+      if (!remaining) { const sec = countEl.closest('.cancel-req-section'); if (sec) sec.remove(); }
+    }
+  } catch (err) { alert('審核失敗：' + err.message); }
 }
 
 async function confirmReceive(btn, orderId) {

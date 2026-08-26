@@ -1087,8 +1087,9 @@ async function confirmOneItem(btn, oiId, orderId) {
       if (itemId && nw) {
         const sys = (sysStr === '' || sysStr === 'null') ? null : parseFloat(sysStr);
         if (sys === null || nw !== sys) {
-          const maps = itemSupplierMap[itemId] || [];
-          await sb.from('price_reviews').insert({ item_id: itemId, supplier_id: maps[0]?.supplier_id, store_id: currentUser.store_id, reported_by: currentUser.id, old_price: sys, new_price: nw, status: 'pending' });
+          const oiData = await sb.from('order_items').select('supplier_id').eq('id', oiId).single();
+          const suppId = oiData?.data?.supplier_id || (itemSupplierMap[itemId] || [])[0]?.supplier_id;
+          await sb.from('price_reviews').insert({ item_id: itemId, supplier_id: suppId, store_id: currentUser.store_id, reported_by: currentUser.id, old_price: sys, new_price: nw, status: 'pending' });
         }
       }
     }
@@ -1243,8 +1244,11 @@ async function confirmReceive(btn, orderId) {
       if (!itemId || !nw) continue;
       const sys = (sysStr === '' || sysStr === 'null') ? null : parseFloat(sysStr);
       if (sys === null || nw !== sys) {
-        const maps = itemSupplierMap[itemId] || [];
-        await sb.from('price_reviews').insert({ item_id: itemId, supplier_id: maps[0]?.supplier_id, store_id: currentUser.store_id, reported_by: currentUser.id, old_price: sys, new_price: nw, status: 'pending' });
+        const oiid = inp.closest('.rcv-row')?.querySelector('.cr-input')?.dataset?.oiid;
+        let suppId = null;
+        if (oiid) { const r = await sb.from('order_items').select('supplier_id').eq('id', oiid).single(); suppId = r?.data?.supplier_id; }
+        if (!suppId) suppId = (itemSupplierMap[itemId] || [])[0]?.supplier_id;
+        await sb.from('price_reviews').insert({ item_id: itemId, supplier_id: suppId, store_id: currentUser.store_id, reported_by: currentUser.id, old_price: sys, new_price: nw, status: 'pending' });
       }
     }
     const { data: allOi } = await sb.from('order_items').select('status').eq('order_id', orderId);

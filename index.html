@@ -1798,21 +1798,41 @@ async function saveOrderQtyEdits(orderId) {
 
 function closeOrderDetail() { document.getElementById('orderDetailOverlay').classList.remove('show'); }
 
-function fulfillItem(btn, date) {
+async function fulfillItem(btn, date) {
   const row = btn.closest('.card-row');
   if (!row) return;
   const inputs = row.querySelectorAll('.ful-qty');
-  inputs.forEach(inp => {
-    inp.value = inp.dataset.ordered;
-    inp.style.color = '';
+  const items = [...inputs].map(inp => ({
+    oiId: inp.dataset.oiid, orderId: inp.dataset.orderid, itemId: inp.dataset.itemid,
+    qty: parseFloat(inp.value) || 0, ordered: parseFloat(inp.dataset.ordered) || 0
+  })).filter(i => i.qty > 0);
+  if (!items.length) return;
+  btn.disabled = true; btn.textContent = '處理中…';
+  try {
+    const orderIds = new Set();
+    const ledgerRows = [];
+    for (const it of items) {
+      await sb.from('order_items').update({ fulfilled_qty: it.qty, status: 'fulfilled' }).eq('id', it.oiId);
+      orderIds.add(it.orderId);
+      if (currentUser.store_id) ledgerRows.push({ store_id: currentUser.store_id, item_id: it.itemId, qty: -it.qty, type: 'fulfill', ref_type: 'order', ref_id: it.orderId });
+    }
+    if (ledgerRows.length) await sb.from('stock_ledger').insert(ledgerRows);
+    for (const orderId of orderIds) {
+      const { data: allOi } = await sb.from('order_items').select('status').eq('order_id', orderId);
+      if (allOi?.every(oi => oi.status === 'fulfilled' || oi.status === 'received' || oi.status === 'cancelled')) {
+        await sb.from('orders').update({ status: 'confirmed', updated_at: new Date().toISOString() }).eq('id', orderId);
+      }
+    }
+    row.style.background = 'rgba(139,92,246,0.08)'; row.style.opacity = '0.3';
+    btn.textContent = '已出貨 ✓'; btn.style.background = 'var(--purple)'; btn.style.color = '#fff';
+    setTimeout(() => { row.remove(); checkEmptyFulfillCards(); }, 800);
+  } catch (err) { alert('出貨失敗：' + err.message); btn.disabled = false; btn.textContent = '全出 ✓'; }
+}
+
+function checkEmptyFulfillCards() {
+  document.querySelectorAll('#fulfillPage .card').forEach(card => {
+    if (!card.querySelectorAll('.card-row').length) card.remove();
   });
-  row.style.background = 'rgba(139,92,246,0.08)';
-  row.style.opacity = '0.55';
-  row.dataset.confirmed = '1';
-  btn.textContent = '已確認';
-  btn.style.background = 'var(--purple)';
-  btn.style.color = '#fff';
-  btn.disabled = true;
 }
 
 function unmarkFulfillRow(inp) {
@@ -1866,7 +1886,7 @@ async function fulfillDay(btn, date) {
 
     for (const orderId of orderIds) {
       const { data: allOi } = await sb.from('order_items').select('status').eq('order_id', orderId);
-      const allDone = allOi?.every(oi => oi.status === 'fulfilled' || oi.status === 'received');
+      const allDone = allOi?.every(oi => oi.status === 'fulfilled' || oi.status === 'received' || oi.status === 'cancelled');
       if (allDone) {
         await sb.from('orders').update({ status: 'confirmed', updated_at: new Date().toISOString() }).eq('id', orderId);
       }

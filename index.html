@@ -456,6 +456,14 @@
   </div>
 </div>
 
+<div class="form-overlay" id="orderDetailOverlay" onclick="if(event.target===this)closeOrderDetail()">
+  <div class="form-sheet">
+    <div class="form-handle"></div>
+    <div class="form-header"><span class="form-title" id="orderDetailTitle">訂單明細</span><button class="form-close" onclick="closeOrderDetail()">✕</button></div>
+    <div class="form-body" id="orderDetailBody"></div>
+  </div>
+</div>
+
 <div class="tpl-overlay" id="tplOverlay" onclick="if(event.target===this)closeTplSheet()">
   <div class="tpl-sheet">
     <div class="tpl-header"><span class="tpl-title">叫貨模板</span><button class="tpl-close" onclick="closeTplSheet()">✕</button></div>
@@ -1726,7 +1734,7 @@ async function loadFulfill() {
         html += `<div class="card-row" style="flex-wrap:wrap"><div class="cr-info" style="width:100%;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><div class="cr-name">${it.name}<span style="font-size:12px;color:var(--text3);margin-left:6px">叫 ${it.totalOrdered} ${it.unit}</span></div><button onclick="fulfillItem(this,'${date}')" style="padding:3px 10px;border:1.5px solid var(--purple);border-radius:6px;background:transparent;color:var(--purple);font-size:12px;font-weight:600;cursor:pointer">全出 ✓</button></div><div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">${it.stores.map(s => {
           const isCool = s.store.startsWith('涼三伯');
           const color = isCool ? '#3b82f6' : '#ef4444';
-          return `<span class="fulfill-store" style="border-color:${color}40;color:${color};display:inline-flex;align-items:center;gap:3px;padding:4px 8px">${sn(s.store)}<input type="number" class="ful-qty" value="${s.ordered}" data-oiid="${s.oiId}" data-orderid="${s.orderId}" data-ordered="${s.ordered}" data-itemid="${it.itemId}" data-date="${date}" inputmode="decimal" min="0" onfocus="this.select()" oninput="this.style.color=parseFloat(this.value)<parseFloat(this.dataset.ordered)?'var(--red)':'';unmarkFulfillRow(this)" style="width:42px;height:24px;border:1px solid ${color}60;border-radius:4px;text-align:center;font-size:13px;font-weight:600;font-family:inherit;color:${color};background:transparent;outline:none">${it.unit}</span>`;
+          return `<span class="fulfill-store" style="border-color:${color}40;color:${color};display:inline-flex;align-items:center;gap:3px;padding:4px 8px"><span onclick="showOrderDetail('${s.orderId}')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px">${sn(s.store)}</span><input type="number" class="ful-qty" value="${s.ordered}" data-oiid="${s.oiId}" data-orderid="${s.orderId}" data-ordered="${s.ordered}" data-itemid="${it.itemId}" data-date="${date}" inputmode="decimal" min="0" onfocus="this.select()" oninput="this.style.color=parseFloat(this.value)<parseFloat(this.dataset.ordered)?'var(--red)':'';unmarkFulfillRow(this)" style="width:42px;height:24px;border:1px solid ${color}60;border-radius:4px;text-align:center;font-size:13px;font-weight:600;font-family:inherit;color:${color};background:transparent;outline:none">${it.unit}</span>`;
         }).join('')}</div></div>`;
       }
       html += '</div>';
@@ -1736,6 +1744,59 @@ async function loadFulfill() {
   html = `<div class="section-bar">待出貨（${sortedDates.length} 天，${totalPending} 項待出）</div>` + picker + html;
   el.innerHTML = html;
 }
+
+async function showOrderDetail(orderId) {
+  const body = document.getElementById('orderDetailBody');
+  body.innerHTML = '<div class="loading">載入中…</div>';
+  document.getElementById('orderDetailOverlay').classList.add('show');
+  const { data: order } = await sb.from('orders').select('*, order_items(*, items(*)), stores(*)').eq('id', orderId).single();
+  if (!order) { body.innerHTML = '<div class="empty-state"><div class="msg">找不到訂單</div></div>'; return; }
+  const store = order.stores?.name || '';
+  const isAdmin = currentUser.role === 'admin' || currentUser.role === 'ops';
+  document.getElementById('orderDetailTitle').textContent = store + ' — ' + order.order_date;
+  let h = `<div style="font-size:13px;color:var(--text3);margin-bottom:12px">訂單編號：${order.id.slice(0,8)}… ｜ 狀態：${order.status}</div>`;
+  const items = order.order_items || [];
+  items.sort((a, b) => (a.items?.name || '').localeCompare(b.items?.name || ''));
+  for (const oi of items) {
+    const item = oi.items;
+    const statusColor = oi.status === 'received' ? 'var(--green)' : oi.status === 'cancelled' ? 'var(--red)' : oi.status === 'short' ? '#f59e0b' : 'var(--text3)';
+    const statusLabel = { pending: '待處理', submitted: '已送出', confirmed: '已確認', received: '已收貨', short: '短收', cancelled: '已取消', fulfilled: '已出貨' }[oi.status] || oi.status;
+    h += `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border)" data-oiid="${oi.id}">`;
+    h += `<div style="flex:1"><div style="font-weight:600;font-size:14px">${item?.name || '?'}</div><div style="font-size:12px;color:var(--text3)">${item?.category || ''}</div></div>`;
+    if (isAdmin && ['pending','submitted','confirmed'].includes(oi.status)) {
+      h += `<input type="number" class="od-qty" value="${oi.ordered_qty}" data-oiid="${oi.id}" data-orig="${oi.ordered_qty}" inputmode="decimal" min="0" style="width:54px;padding:6px 4px;border:1.5px solid var(--border);border-radius:6px;text-align:center;font-size:14px;font-weight:600;font-family:inherit;color:var(--text);outline:none" onfocus="this.select()" oninput="this.style.borderColor=this.value!=this.dataset.orig?'var(--accent)':'var(--border)'">`;
+    } else {
+      h += `<span style="font-size:14px;font-weight:600">${oi.ordered_qty}</span>`;
+    }
+    h += `<span style="font-size:13px;color:var(--text3);min-width:24px">${item?.unit || ''}</span>`;
+    h += `<span style="font-size:11px;padding:2px 6px;border-radius:4px;background:${statusColor}20;color:${statusColor};font-weight:600">${statusLabel}</span>`;
+    h += `</div>`;
+  }
+  if (isAdmin) {
+    h += `<button class="form-save" onclick="saveOrderQtyEdits('${orderId}')" style="margin-top:16px">儲存修改</button>`;
+  }
+  body.innerHTML = h;
+}
+
+async function saveOrderQtyEdits(orderId) {
+  const body = document.getElementById('orderDetailBody');
+  const inputs = body.querySelectorAll('.od-qty');
+  let changed = 0;
+  for (const inp of inputs) {
+    const newQty = parseFloat(inp.value);
+    const orig = parseFloat(inp.dataset.orig);
+    if (isNaN(newQty) || newQty < 0 || newQty === orig) continue;
+    const { error } = await sb.from('order_items').update({ ordered_qty: newQty }).eq('id', inp.dataset.oiid);
+    if (error) { alert('更新失敗：' + error.message); return; }
+    changed++;
+  }
+  if (changed === 0) { closeOrderDetail(); return; }
+  closeOrderDetail();
+  showModal('✅', '已更新', `修改了 ${changed} 項數量`);
+  if (typeof loadFulfill === 'function') loadFulfill();
+}
+
+function closeOrderDetail() { document.getElementById('orderDetailOverlay').classList.remove('show'); }
 
 function fulfillItem(btn, date) {
   const row = btn.closest('.card-row');

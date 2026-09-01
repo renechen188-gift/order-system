@@ -1647,7 +1647,7 @@ async function loadTransferCost() {
     (order.order_items || []).filter(oi => oi.status !== 'cancelled').forEach(oi => {
       const item = oi.items;
       const key = item?.id || oi.item_id;
-      const price = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || 0;
+      const price = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
       if (!storeData[storeName].items[key]) storeData[storeName].items[key] = { name: item?.name || '', unit: item?.unit || '', cat: item?.category || '', qty: 0, price, subtotal: 0 };
       storeData[storeName].items[key].qty += oi.ordered_qty;
       storeData[storeName].items[key].subtotal = storeData[storeName].items[key].qty * price;
@@ -1731,7 +1731,7 @@ async function exportTransferCost() {
     (order.order_items || []).filter(oi => oi.status !== 'cancelled').forEach(oi => {
       const item = oi.items;
       const key = item?.id || oi.item_id;
-      const price = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || 0;
+      const price = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
       const existing = storeGroups[sn].find(r => r.key === key);
       if (existing) { existing.qty += oi.ordered_qty; existing.subtotal = existing.qty * existing.price; }
       else storeGroups[sn].push({ key, name: item?.name || '', unit: item?.unit || '', cat: item?.category || '', qty: oi.ordered_qty, price, subtotal: oi.ordered_qty * price });

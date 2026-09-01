@@ -1630,8 +1630,9 @@ async function loadTransferCost() {
   const priceMap = {};
   (itemSups || []).forEach(is => { priceMap[is.item_id + '_' + is.supplier_id] = is.unit_price; priceMap[is.item_id] = priceMap[is.item_id] || is.unit_price; });
 
-  const orders = [...(intOrders || [])];
-  (extOrders || []).forEach(o => {
+  const storeOnly = o => o.stores?.type === 'store' && o.stores?.is_active !== false;
+  const orders = [...(intOrders || []).filter(storeOnly)];
+  (extOrders || []).filter(storeOnly).forEach(o => {
     const kitchenItems = (o.order_items || []).filter(oi => kitchenSupIds.has(oi.supplier_id));
     if (kitchenItems.length) orders.push({ ...o, order_items: kitchenItems });
   });
@@ -1716,8 +1717,9 @@ async function exportTransferCost() {
   ]);
   const priceMap = {};
   (itemSups || []).forEach(is => { priceMap[is.item_id + '_' + is.supplier_id] = is.unit_price; priceMap[is.item_id] = priceMap[is.item_id] || is.unit_price; });
-  const orders = [...(intOrders || [])];
-  (extOrders || []).forEach(o => {
+  const storeOnly = o => o.stores?.type === 'store' && o.stores?.is_active !== false;
+  const orders = [...(intOrders || []).filter(storeOnly)];
+  (extOrders || []).filter(storeOnly).forEach(o => {
     const ki = (o.order_items || []).filter(oi => kitchenSupIds.has(oi.supplier_id));
     if (ki.length) orders.push({ ...o, order_items: ki });
   });

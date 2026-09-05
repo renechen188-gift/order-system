@@ -475,6 +475,7 @@
 const SUPABASE_URL = 'https://sjvnnpqhrlahgnbibvuv.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNqdm5ucHFocmxhaGduYmlidnV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1MDY5ODQsImV4cCI6MjA5MjA4Mjk4NH0.HqTV0y3CqmrlqGlDzw-Xrg8EiIdJm7Y81XvhlLkVqDc';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { db: { schema: 'inventory' } });
+const sbPub = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let currentUser = null;
 let allItems = [];
@@ -1702,7 +1703,12 @@ async function loadTransferCost() {
     html += `</tbody></table></div></div>`;
   }
 
-  html += `<div style="padding:8px 16px 20px"><button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--purple);color:var(--purple);background:var(--surface);cursor:pointer" onclick="exportTransferCost()">📊 匯出調撥報表</button></div>`;
+  html += `<div style="padding:8px 16px 20px;display:flex;gap:10px;flex-wrap:wrap">`;
+  html += `<button class="card-btn" style="flex:1;min-width:200px;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--purple);color:var(--purple);background:var(--surface);cursor:pointer" onclick="exportTransferCost()">📊 匯出調撥報表</button>`;
+  if (currentUser.role === 'admin' && tcMonth >= '2026-09') {
+    html += `<button class="card-btn" style="flex:1;min-width:200px;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--green);color:var(--green);background:var(--surface);cursor:pointer" onclick="pushTransferCostToPnL()">📤 推送到損益表</button>`;
+  }
+  html += `</div>`;
   el.innerHTML = html;
 }
 
@@ -1761,6 +1767,72 @@ async function exportTransferCost() {
   ws.addRow(['', '', '', '', '', '總計', grandTotal]);
   ws.lastRow.font = { bold: true, size: 13 };
   await downloadWorkbook(wb, `央廚調撥_${tcMonth}.xlsx`);
+}
+
+async function pushTransferCostToPnL() {
+  if (tcMonth < '2026-09') { alert('調撥連動從 2026-09 開始'); return; }
+
+  const kitchenSupIds = new Set(allSuppliers.filter(s => s.type === 'central_kitchen').map(s => s.id));
+  const monthStart = tcMonth + '-01';
+  const monthEnd = tcMonth + '-31';
+  const [{ data: intOrders }, { data: extOrders }, { data: itemSups }] = await Promise.all([
+    sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', monthStart).lte('order_date', monthEnd).eq('order_type', 'internal').neq('status', 'cancelled'),
+    sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', monthStart).lte('order_date', monthEnd).eq('order_type', 'external').neq('status', 'cancelled'),
+    sb.from('item_suppliers').select('item_id,supplier_id,unit_price')
+  ]);
+
+  const priceMap = {};
+  (itemSups || []).forEach(is => { priceMap[is.item_id + '_' + is.supplier_id] = is.unit_price; priceMap[is.item_id] = priceMap[is.item_id] || is.unit_price; });
+
+  const storeOnly = o => o.stores?.type === 'store';
+  const orders = [...(intOrders || []).filter(storeOnly)];
+  (extOrders || []).filter(storeOnly).forEach(o => {
+    const ki = (o.order_items || []).filter(oi => kitchenSupIds.has(oi.supplier_id));
+    if (ki.length) orders.push({ ...o, order_items: ki });
+  });
+
+  if (!orders?.length) { alert('本月無調撥紀錄'); return; }
+
+  const storeData = {};
+  orders.forEach(order => {
+    const storeName = order.stores?.name;
+    if (!storeName) return;
+    if (!storeData[storeName]) storeData[storeName] = { dalu: 0, other: 0 };
+    (order.order_items || []).filter(oi => oi.status !== 'cancelled').forEach(oi => {
+      const item = oi.items;
+      const key = item?.id || oi.item_id;
+      const price = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
+      const amount = oi.ordered_qty * price;
+      if (tcCat(item?.category) === '大陸調料') storeData[storeName].dalu += amount;
+      else storeData[storeName].other += amount;
+    });
+  });
+
+  const summary = Object.entries(storeData).map(([store, d]) =>
+    `${store}：大陸調料 $${d.dalu.toLocaleString()} / 倉店調撥 $${d.other.toLocaleString()}`
+  ).join('\n');
+  if (!confirm(`推送 ${tcMonth} 調撥到損益表：\n\n${summary}\n\n將寫入「成本-大陸調料」及「成本-倉店調撥」\n確認推送？`)) return;
+
+  const desc = '央廚調撥（自動推送）';
+  const attrMonth = tcMonth.replace('-', '');
+  const { error: delErr } = await sbPub.from('cashflow_entries')
+    .delete().eq('attribution_month', attrMonth).eq('description', desc);
+  if (delErr) { alert('清除舊資料失敗: ' + delErr.message); return; }
+
+  const lastDay = new Date(tcMonth + '-01');
+  lastDay.setMonth(lastDay.getMonth() + 1);
+  lastDay.setDate(0);
+  const entryDate = lastDay.toISOString().slice(0, 10);
+
+  const rows = [];
+  for (const [store, d] of Object.entries(storeData)) {
+    if (d.dalu > 0) rows.push({ entry_date: entryDate, store, subject: '成本-大陸調料', vendor: '央廚', description: desc, amount: d.dalu, fee: 0, attribution_month: attrMonth, updated_at: new Date().toISOString() });
+    if (d.other > 0) rows.push({ entry_date: entryDate, store, subject: '成本-倉店調撥', vendor: '央廚', description: desc, amount: d.other, fee: 0, attribution_month: attrMonth, updated_at: new Date().toISOString() });
+  }
+
+  const { error: insErr } = await sbPub.from('cashflow_entries').insert(rows);
+  if (insErr) { alert('推送失敗: ' + insErr.message); return; }
+  alert(`已推送 ${rows.length} 筆調撥到損益表 ✓`);
 }
 
 // ══════════ PRICE REVIEWS (Admin) ══════════
@@ -2643,7 +2715,7 @@ async function approveSheet(sheetId, period) {
     }
 
     const [{ data: counts }, { data: balances }] = await Promise.all([
-      sb.from('inventory_counts').select('item_id, actual_qty').eq('store_id', sheet.store_id).eq('count_period', period),
+      sb.from('inventory_counts').select('item_id, actual_qty, items(purchase_price)').eq('store_id', sheet.store_id).eq('count_period', period),
       sb.from('stock_balance').select('item_id, qty').eq('store_id', sheet.store_id)
     ]);
     const sysMap = {};
@@ -2660,6 +2732,20 @@ async function approveSheet(sheetId, period) {
 
     const { error } = await sb.from('count_sheets').update({ status: 'approved', completed_at: new Date().toISOString() }).eq('id', sheetId);
     if (error) throw error;
+
+    const ym = period.slice(0, 7).replace('-', '');
+    if (ym >= '202609') {
+      const storeName = allStores.find(s => s.id === sheet.store_id)?.name;
+      if (storeName) {
+        let invValue = 0;
+        (counts || []).forEach(c => { invValue += (c.actual_qty || 0) * (c.items?.purchase_price || 0); });
+        invValue = Math.round(invValue);
+        await sbPub.from('cashflow_records').delete().eq('store', storeName).eq('attribution_month', ym).eq('pnl_group', '盤存').eq('pnl_item', '期末盤存');
+        await sbPub.from('cashflow_records').insert({ store: storeName, attribution_month: ym, pnl_section: '成本', pnl_group: '盤存', pnl_item: '期末盤存', amount: invValue, description: `盤點 ${period}（自動推送）` });
+        alert(`已推送 ${storeName} 期末盤存 $${invValue.toLocaleString()} 到損益表`);
+      }
+    }
+
     reviewCountSheet(sheetId, period);
   } catch (err) { alert('核准失敗：' + (err.message || err)); }
 }

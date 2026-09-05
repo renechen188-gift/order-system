@@ -1621,7 +1621,8 @@ async function loadTransferCost() {
 
   const kitchenSupIds = new Set(allSuppliers.filter(s => s.type === 'central_kitchen').map(s => s.id));
   const monthStart = tcMonth + '-01';
-  const monthEnd = tcMonth + '-31';
+  const mEnd = new Date(tcMonth + '-01'); mEnd.setMonth(mEnd.getMonth() + 1); mEnd.setDate(0);
+  const monthEnd = mEnd.toISOString().slice(0, 10);
   const [{ data: intOrders }, { data: extOrders }, { data: itemSups }] = await Promise.all([
     sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', monthStart).lte('order_date', monthEnd).eq('order_type', 'internal').neq('status', 'cancelled'),
     sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', monthStart).lte('order_date', monthEnd).eq('order_type', 'external').neq('status', 'cancelled'),
@@ -1715,7 +1716,8 @@ async function loadTransferCost() {
 async function exportTransferCost() {
   const kitchenSupIds = new Set(allSuppliers.filter(s => s.type === 'central_kitchen').map(s => s.id));
   const monthStart = tcMonth + '-01';
-  const monthEnd = tcMonth + '-31';
+  const mEnd = new Date(tcMonth + '-01'); mEnd.setMonth(mEnd.getMonth() + 1); mEnd.setDate(0);
+  const monthEnd = mEnd.toISOString().slice(0, 10);
   const [{ data: intOrders }, { data: extOrders }, { data: itemSups }] = await Promise.all([
     sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', monthStart).lte('order_date', monthEnd).eq('order_type', 'internal').neq('status', 'cancelled'),
     sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', monthStart).lte('order_date', monthEnd).eq('order_type', 'external').neq('status', 'cancelled'),
@@ -1774,7 +1776,8 @@ async function pushTransferCostToPnL() {
 
   const kitchenSupIds = new Set(allSuppliers.filter(s => s.type === 'central_kitchen').map(s => s.id));
   const monthStart = tcMonth + '-01';
-  const monthEnd = tcMonth + '-31';
+  const mEnd = new Date(tcMonth + '-01'); mEnd.setMonth(mEnd.getMonth() + 1); mEnd.setDate(0);
+  const monthEnd = mEnd.toISOString().slice(0, 10);
   const [{ data: intOrders }, { data: extOrders }, { data: itemSups }] = await Promise.all([
     sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', monthStart).lte('order_date', monthEnd).eq('order_type', 'internal').neq('status', 'cancelled'),
     sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', monthStart).lte('order_date', monthEnd).eq('order_type', 'external').neq('status', 'cancelled'),

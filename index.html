@@ -476,6 +476,10 @@ const SUPABASE_URL = 'https://sjvnnpqhrlahgnbibvuv.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNqdm5ucHFocmxhaGduYmlidnV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1MDY5ODQsImV4cCI6MjA5MjA4Mjk4NH0.HqTV0y3CqmrlqGlDzw-Xrg8EiIdJm7Y81XvhlLkVqDc';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { db: { schema: 'inventory' } });
 const sbPub = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+async function syncPubAuth() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) await sbPub.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token });
+}
 
 let currentUser = null;
 let allItems = [];
@@ -1772,6 +1776,7 @@ async function exportTransferCost() {
 }
 
 async function pushTransferCostToPnL() {
+  await syncPubAuth();
   if (tcMonth < '2026-09') { alert('調撥連動從 2026-09 開始'); return; }
 
   const kitchenSupIds = new Set(allSuppliers.filter(s => s.type === 'central_kitchen').map(s => s.id));
@@ -2738,6 +2743,7 @@ async function approveSheet(sheetId, period) {
 
     const ym = period.slice(0, 7).replace('-', '');
     if (ym >= '202609') {
+      await syncPubAuth();
       const storeName = allStores.find(s => s.id === sheet.store_id)?.name;
       if (storeName) {
         let invValue = 0;

@@ -475,11 +475,6 @@
 const SUPABASE_URL = 'https://sjvnnpqhrlahgnbibvuv.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNqdm5ucHFocmxhaGduYmlidnV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1MDY5ODQsImV4cCI6MjA5MjA4Mjk4NH0.HqTV0y3CqmrlqGlDzw-Xrg8EiIdJm7Y81XvhlLkVqDc';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { db: { schema: 'inventory' } });
-const sbPub = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-async function syncPubAuth() {
-  const { data: { session } } = await sb.auth.getSession();
-  if (session) await sbPub.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token });
-}
 
 let currentUser = null;
 let allItems = [];
@@ -1776,7 +1771,6 @@ async function exportTransferCost() {
 }
 
 async function pushTransferCostToPnL() {
-  await syncPubAuth();
   if (tcMonth < '2026-09') { alert('調撥連動從 2026-09 開始'); return; }
 
   const kitchenSupIds = new Set(allSuppliers.filter(s => s.type === 'central_kitchen').map(s => s.id));
@@ -1823,9 +1817,6 @@ async function pushTransferCostToPnL() {
 
   const desc = '央廚調撥（自動推送）';
   const attrMonth = tcMonth.replace('-', '');
-  const { error: delErr } = await sbPub.from('cashflow_entries')
-    .delete().eq('attribution_month', attrMonth).eq('description', desc);
-  if (delErr) { alert('清除舊資料失敗: ' + delErr.message); return; }
 
   const lastDay = new Date(tcMonth + '-01');
   lastDay.setMonth(lastDay.getMonth() + 1);
@@ -1834,12 +1825,12 @@ async function pushTransferCostToPnL() {
 
   const rows = [];
   for (const [store, d] of Object.entries(storeData)) {
-    if (d.dalu > 0) rows.push({ entry_date: entryDate, store, subject: '成本-大陸調料', vendor: '央廚', description: desc, amount: d.dalu, fee: 0, attribution_month: attrMonth, updated_at: new Date().toISOString() });
-    if (d.other > 0) rows.push({ entry_date: entryDate, store, subject: '成本-倉店調撥', vendor: '央廚', description: desc, amount: d.other, fee: 0, attribution_month: attrMonth, updated_at: new Date().toISOString() });
+    if (d.dalu > 0) rows.push({ entry_date: entryDate, store, subject: '成本-大陸調料', vendor: '央廚', description: desc, amount: d.dalu, fee: 0, attribution_month: attrMonth });
+    if (d.other > 0) rows.push({ entry_date: entryDate, store, subject: '成本-倉店調撥', vendor: '央廚', description: desc, amount: d.other, fee: 0, attribution_month: attrMonth });
   }
 
-  const { error: insErr } = await sbPub.from('cashflow_entries').insert(rows);
-  if (insErr) { alert('推送失敗: ' + insErr.message); return; }
+  const { error } = await sb.rpc('push_transfer_cost', { p_month: attrMonth, p_entries: rows });
+  if (error) { alert('推送失敗: ' + error.message); return; }
   alert(`已推送 ${rows.length} 筆調撥到損益表 ✓`);
 }
 
@@ -2743,14 +2734,12 @@ async function approveSheet(sheetId, period) {
 
     const ym = period.slice(0, 7).replace('-', '');
     if (ym >= '202609') {
-      await syncPubAuth();
       const storeName = allStores.find(s => s.id === sheet.store_id)?.name;
       if (storeName) {
         let invValue = 0;
         (counts || []).forEach(c => { invValue += (c.actual_qty || 0) * (c.items?.purchase_price || 0); });
         invValue = Math.round(invValue);
-        await sbPub.from('cashflow_records').delete().eq('store', storeName).eq('attribution_month', ym).eq('pnl_group', '盤存').eq('pnl_item', '期末盤存');
-        await sbPub.from('cashflow_records').insert({ store: storeName, attribution_month: ym, pnl_section: '成本', pnl_group: '盤存', pnl_item: '期末盤存', amount: invValue, description: `盤點 ${period}（自動推送）` });
+        await sb.rpc('push_inventory_value', { p_store: storeName, p_month: ym, p_amount: invValue, p_desc: `盤點 ${period}（自動推送）` });
         alert(`已推送 ${storeName} 期末盤存 $${invValue.toLocaleString()} 到損益表`);
       }
     }

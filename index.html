@@ -1645,12 +1645,14 @@ async function loadTransferCost() {
     const storeName = order.stores?.name || '?';
     const storeId = order.store_id;
     if (!storeData[storeName]) storeData[storeName] = { storeId, items: {}, total: 0 };
-    (order.order_items || []).filter(oi => oi.status !== 'cancelled').forEach(oi => {
+    (order.order_items || []).filter(oi => oi.status !== 'cancelled' && oi.status !== 'short').forEach(oi => {
       const item = oi.items;
       const key = item?.id || oi.item_id;
+      const qty = parseFloat(oi.received_qty) || 0;
+      if (!qty) return;
       const price = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
       if (!storeData[storeName].items[key]) storeData[storeName].items[key] = { name: item?.name || '', unit: item?.unit || '', cat: item?.category || '', qty: 0, price, subtotal: 0 };
-      storeData[storeName].items[key].qty += oi.ordered_qty;
+      storeData[storeName].items[key].qty += qty;
       storeData[storeName].items[key].subtotal = storeData[storeName].items[key].qty * price;
     });
   });
@@ -1736,13 +1738,15 @@ async function exportTransferCost() {
   orders.forEach(order => {
     const sn = order.stores?.name || '?';
     if (!storeGroups[sn]) storeGroups[sn] = [];
-    (order.order_items || []).filter(oi => oi.status !== 'cancelled').forEach(oi => {
+    (order.order_items || []).filter(oi => oi.status !== 'cancelled' && oi.status !== 'short').forEach(oi => {
       const item = oi.items;
       const key = item?.id || oi.item_id;
+      const qty = parseFloat(oi.received_qty) || 0;
+      if (!qty) return;
       const price = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
       const existing = storeGroups[sn].find(r => r.key === key);
-      if (existing) { existing.qty += oi.ordered_qty; existing.subtotal = existing.qty * existing.price; }
-      else storeGroups[sn].push({ key, name: item?.name || '', unit: item?.unit || '', cat: item?.category || '', qty: oi.ordered_qty, price, subtotal: oi.ordered_qty * price });
+      if (existing) { existing.qty += qty; existing.subtotal = existing.qty * existing.price; }
+      else storeGroups[sn].push({ key, name: item?.name || '', unit: item?.unit || '', cat: item?.category || '', qty, price, subtotal: qty * price });
     });
   });
 
@@ -1800,11 +1804,13 @@ async function pushTransferCostToPnL() {
     const storeName = order.stores?.name;
     if (!storeName) return;
     if (!storeData[storeName]) storeData[storeName] = { dalu: 0, other: 0 };
-    (order.order_items || []).filter(oi => oi.status !== 'cancelled').forEach(oi => {
+    (order.order_items || []).filter(oi => oi.status !== 'cancelled' && oi.status !== 'short').forEach(oi => {
       const item = oi.items;
       const key = item?.id || oi.item_id;
+      const qty = parseFloat(oi.received_qty) || 0;
+      if (!qty) return;
       const price = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
-      const amount = oi.ordered_qty * price;
+      const amount = qty * price;
       if (tcCat(item?.category) === '大陸調料') storeData[storeName].dalu += amount;
       else storeData[storeName].other += amount;
     });

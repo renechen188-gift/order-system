@@ -2816,11 +2816,15 @@ async function openStoreCount(sheetId, period) {
   const el = document.getElementById('countPage');
   const items = allItems.filter(i => i.needs_count);
 
-  const [{ data: existing }, { data: balances }, { data: sheet }] = await Promise.all([
+  const [countsRes, balRes, sheetRes] = await Promise.all([
     sb.from('inventory_counts').select('*').eq('store_id', currentUser.store_id).eq('count_period', period),
     sb.from('stock_balance').select('item_id, qty').eq('store_id', currentUser.store_id),
-    sb.from('count_sheets').select('return_notes').eq('id', sheetId).single()
+    sb.from('count_sheets').select('return_notes, status').eq('id', sheetId).single()
   ]);
+  if (countsRes.error) { alert('載入盤點資料失敗，請重新整理頁面再試：' + countsRes.error.message); return; }
+  const existing = countsRes.data;
+  const balances = balRes.data;
+  const sheet = sheetRes.data;
   const saved = {};
   (existing || []).forEach(c => { saved[c.item_id] = c; });
   const sysQty = {};
@@ -2839,7 +2843,19 @@ async function openStoreCount(sheetId, period) {
   renderStoreCount(el, items, cats);
 }
 
+function syncCountInputs() {
+  if (!window._countSaved) window._countSaved = {};
+  allItems.filter(i => i.needs_count).forEach(item => {
+    const input = document.getElementById('ci_' + item.id);
+    if (input && input.value !== '') {
+      const val = parseFloat(input.value);
+      if (!isNaN(val)) window._countSaved[item.id] = { ...(window._countSaved[item.id] || {}), actual_qty: val, item_id: item.id };
+    }
+  });
+}
+
 function renderStoreCount(el, items, cats) {
+  syncCountInputs();
   const saved = window._countSaved;
   const cat = window._countCat;
   const filtered = cat === 'ALL' ? items : items.filter(i => i.category === cat);
@@ -2873,19 +2889,24 @@ function renderStoreCount(el, items, cats) {
 }
 
 async function submitStoreCount() {
+  syncCountInputs();
   const items = allItems.filter(i => i.needs_count);
+  const saved = window._countSaved || {};
   const rows = [];
   let empty = 0;
   items.forEach(item => {
-    const input = document.getElementById('ci_' + item.id);
-    if (!input) return;
-    const val = parseFloat(input.value);
-    if (isNaN(val)) { empty++; return; }
-    const sq = (window._countSysQty || {})[item.id] || 0;
-    rows.push({ store_id: currentUser.store_id, item_id: item.id, count_period: window._countPeriod, system_qty: sq, actual_qty: val, counted_by: currentUser.id });
+    const s = saved[item.id];
+    if (s && !isNaN(s.actual_qty)) {
+      const sq = (window._countSysQty || {})[item.id] || 0;
+      rows.push({ store_id: currentUser.store_id, item_id: item.id, count_period: window._countPeriod, system_qty: sq, actual_qty: s.actual_qty, counted_by: currentUser.id });
+    } else {
+      empty++;
+    }
   });
 
-  if (empty > 0 && !confirm(`有 ${empty} 項未填（將視為 0），確定送出？`)) return;
+  if (rows.length === 0 && items.length > 0) { alert('異常：沒有任何品項有數量，請重新整理頁面後再盤點'); return; }
+  if (empty > items.length * 0.9 && !confirm(`⚠️ 有 ${empty}/${items.length} 項未填，幾乎全部空白。如果是退回重盤，請確認資料有正確載入。確定送出？`)) return;
+  if (empty > 0 && empty <= items.length * 0.9 && !confirm(`有 ${empty} 項未填（將視為 0），確定送出？`)) return;
   items.forEach(item => {
     if (!rows.find(r => r.item_id === item.id)) {
       const sq = (window._countSysQty || {})[item.id] || 0;

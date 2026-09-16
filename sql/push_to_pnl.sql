@@ -9,7 +9,7 @@ AS $$
 BEGIN
   DELETE FROM public.cashflow_entries
   WHERE attribution_month = p_month
-    AND description = '央廚調撥（自動推送）';
+    AND description IN ('央廚調撥（自動推送）', '央廚調撥扣減（自動推送）');
 
   INSERT INTO public.cashflow_entries (entry_date, store, subject, vendor, description, amount, fee, attribution_month, updated_at)
   SELECT

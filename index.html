@@ -1816,12 +1816,26 @@ async function pushTransferCostToPnL() {
     });
   });
 
+  const KITCHEN_HOME_STORE = '麻媽家信義';
+  let totalOutDalu = 0, totalOutOther = 0;
+  for (const [store, d] of Object.entries(storeData)) {
+    if (store !== KITCHEN_HOME_STORE) {
+      totalOutDalu += d.dalu;
+      totalOutOther += d.other;
+    }
+  }
+
   const summary = Object.entries(storeData).map(([store, d]) =>
     `${store}：大陸調料 $${d.dalu.toLocaleString()} / 倉店調撥 $${d.other.toLocaleString()}`
   ).join('\n');
-  if (!confirm(`推送 ${tcMonth} 調撥到損益表：\n\n${summary}\n\n將寫入「成本-大陸調料」及「成本-倉店調撥」\n確認推送？`)) return;
+  const deductLines = [];
+  if (totalOutDalu > 0) deductLines.push(`大陸調料扣減 -$${totalOutDalu.toLocaleString()}`);
+  if (totalOutOther > 0) deductLines.push(`調撥出 $${totalOutOther.toLocaleString()}`);
+  const deductLine = deductLines.length ? `\n\n${KITCHEN_HOME_STORE}：\n${deductLines.join('\n')}` : '';
+  if (!confirm(`推送 ${tcMonth} 調撥到損益表：\n\n${summary}${deductLine}\n\n確認推送？`)) return;
 
   const desc = '央廚調撥（自動推送）';
+  const descDeduct = '央廚調撥扣減（自動推送）';
   const attrMonth = tcMonth.replace('-', '');
 
   const lastDay = new Date(tcMonth + '-01');
@@ -1834,6 +1848,8 @@ async function pushTransferCostToPnL() {
     if (d.dalu > 0) rows.push({ entry_date: entryDate, store, subject: '成本-大陸調料', vendor: '央廚', description: desc, amount: d.dalu, fee: 0, attribution_month: attrMonth });
     if (d.other > 0) rows.push({ entry_date: entryDate, store, subject: '成本-倉店調撥', vendor: '央廚', description: desc, amount: d.other, fee: 0, attribution_month: attrMonth });
   }
+  if (totalOutDalu > 0) rows.push({ entry_date: entryDate, store: KITCHEN_HOME_STORE, subject: '成本-大陸調料扣減', vendor: '央廚', description: descDeduct, amount: -totalOutDalu, fee: 0, attribution_month: attrMonth });
+  if (totalOutOther > 0) rows.push({ entry_date: entryDate, store: KITCHEN_HOME_STORE, subject: '成本-調撥扣減', vendor: '央廚', description: descDeduct, amount: totalOutOther, fee: 0, attribution_month: attrMonth });
 
   const { error } = await sb.rpc('push_transfer_cost', { p_month: attrMonth, p_entries: rows });
   if (error) { alert('推送失敗: ' + error.message); return; }

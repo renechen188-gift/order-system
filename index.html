@@ -2624,7 +2624,7 @@ async function openCountPeriod() {
   const period = prompt('盤點期別（格式：2026-07-上 或 2026-07-下）', getCurrentPeriod());
   if (!period || !/^\d{4}-\d{2}-(上|下)$/.test(period)) return;
 
-  const stores = allStores.filter(s => s.type === 'store' || s.type === 'warehouse');
+  const stores = allStores.filter(s => s.type === 'store');
   const existing = await sb.from('count_sheets').select('id').eq('period', period);
   if (existing.data?.length) { alert('此期別已存在'); return; }
 
@@ -3665,7 +3665,7 @@ async function exportStockSummary() {
 // ══════════ CONFIG (配送設定) ══════════
 async function loadConfig() {
   const el = document.getElementById('configPage');
-  const stores = allStores.filter(s => s.type === 'store' || s.type === 'kitchen' || s.type === 'warehouse');
+  const stores = allStores.filter(s => s.type === 'store' || s.type === 'kitchen');
   const suppliers = allSuppliers;
 
   const { data: mappings } = await sb.from('store_suppliers').select('*');

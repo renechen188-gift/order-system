@@ -1817,29 +1817,22 @@ async function pushTransferCostToPnL() {
   });
 
   const KITCHEN_HOME_STORE = '麻媽家信義';
-  const xinYiData = storeData[KITCHEN_HOME_STORE];
-  const xinYiHasOrders = xinYiData && (xinYiData.dalu > 0 || xinYiData.other > 0);
   let totalOutDalu = 0, totalOutOther = 0;
-  if (!xinYiHasOrders) {
-    for (const [store, d] of Object.entries(storeData)) {
-      if (store !== KITCHEN_HOME_STORE) {
-        totalOutDalu += d.dalu;
-        totalOutOther += d.other;
-      }
+  for (const [store, d] of Object.entries(storeData)) {
+    if (store !== KITCHEN_HOME_STORE) {
+      totalOutDalu += d.dalu;
+      totalOutOther += d.other;
     }
   }
 
-  const summary = Object.entries(storeData).map(([store, d]) =>
+  const otherSummary = Object.entries(storeData).filter(([s]) => s !== KITCHEN_HOME_STORE).map(([store, d]) =>
     `${store}：大陸調料 $${d.dalu.toLocaleString()} / 倉店調撥 $${d.other.toLocaleString()}`
   ).join('\n');
-  const modeNote = xinYiHasOrders
-    ? `\n\n⚡ ${KITCHEN_HOME_STORE} 本月仍有央廚訂單，不套用扣減`
-    : '';
   const deductLines = [];
   if (totalOutDalu > 0) deductLines.push(`大陸調料扣減 -$${totalOutDalu.toLocaleString()}`);
-  if (totalOutOther > 0) deductLines.push(`調撥出 $${totalOutOther.toLocaleString()}`);
+  if (totalOutOther > 0) deductLines.push(`（減）調撥出 $${totalOutOther.toLocaleString()}`);
   const deductLine = deductLines.length ? `\n\n${KITCHEN_HOME_STORE}：\n${deductLines.join('\n')}` : '';
-  if (!confirm(`推送 ${tcMonth} 調撥到損益表：\n\n${summary}${modeNote}${deductLine}\n\n確認推送？`)) return;
+  if (!confirm(`推送 ${tcMonth} 調撥到損益表：\n\n${otherSummary}${deductLine}\n\n確認推送？`)) return;
 
   const desc = '央廚調撥（自動推送）';
   const descDeduct = '央廚調撥扣減（自動推送）';
@@ -1852,6 +1845,7 @@ async function pushTransferCostToPnL() {
 
   const rows = [];
   for (const [store, d] of Object.entries(storeData)) {
+    if (store === KITCHEN_HOME_STORE) continue;
     if (d.dalu > 0) rows.push({ entry_date: entryDate, store, subject: '成本-大陸調料', vendor: '央廚', description: desc, amount: d.dalu, fee: 0, attribution_month: attrMonth });
     if (d.other > 0) rows.push({ entry_date: entryDate, store, subject: '成本-倉店調撥', vendor: '央廚', description: desc, amount: d.other, fee: 0, attribution_month: attrMonth });
   }

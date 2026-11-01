@@ -3453,7 +3453,8 @@ async function exportReceiveDetail() {
     { header: '類型', key: 'type', width: 10 }
   ];
   styleHeader(ws);
-  let grandTotal = 0;
+  // 按日期分組
+  const byDate = {};
   orders.forEach(o => (o.order_items || []).forEach(oi => {
     if (oi.status === 'cancelled') return;
     if (f.supId && oi.supplier_id !== f.supId) return;
@@ -3464,15 +3465,28 @@ async function exportReceiveDetail() {
     const supMap = (itemSupplierMap[item?.id] || []).find(m => m.supplier_id === oi.supplier_id);
     const price = supMap?.unit_price || item?.purchase_price || 0;
     const total = rQty * price;
-    grandTotal += total;
-    const row = ws.addRow({
-      date: o.order_date, store: o.stores?.name || '', name: item?.name || '', cat: item?.category || '',
-      sup: getSupplierName(oi.supplier_id), ordered: oQty, received: rQty, diff: rQty - oQty,
-      unit: item?.unit || '', price, total, type: o.order_type === 'internal' ? '央廚' : '外部'
-    });
-    if (rQty !== oQty) row.getCell('diff').font = { color: { argb: 'FFDC2626' }, bold: true };
+    const d = o.order_date;
+    if (!byDate[d]) byDate[d] = { rows: [], subtotal: 0 };
+    byDate[d].rows.push({ date: d, store: o.stores?.name || '', name: item?.name || '', cat: item?.category || '', sup: getSupplierName(oi.supplier_id), ordered: oQty, received: rQty, diff: rQty - oQty, unit: item?.unit || '', price, total, type: o.order_type === 'internal' ? '央廚' : '外部' });
+    byDate[d].subtotal += total;
   }));
-  const sumRow = ws.addRow({ name: '合計', total: grandTotal });
+  let grandTotal = 0;
+  const sortedDates = Object.keys(byDate).sort();
+  sortedDates.forEach(date => {
+    const { rows, subtotal } = byDate[date];
+    rows.forEach(r => {
+      const row = ws.addRow(r);
+      if (r.diff !== 0) row.getCell('diff').font = { color: { argb: 'FFDC2626' }, bold: true };
+    });
+    const subRow = ws.addRow({ name: `${date} 小計`, total: subtotal });
+    subRow.font = { bold: true };
+    subRow.getCell('total').font = { bold: true };
+    subRow.getCell('name').font = { bold: true };
+    subRow.eachCell(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } }; });
+    grandTotal += subtotal;
+  });
+  ws.addRow({});
+  const sumRow = ws.addRow({ name: '總計', total: grandTotal });
   sumRow.font = { bold: true, size: 12 };
   ws.getColumn('ordered').numFmt = '#,##0.##';
   ws.getColumn('received').numFmt = '#,##0.##';

@@ -3431,7 +3431,7 @@ async function exportOrderDetail() {
 
 async function exportReceiveDetail() {
   const f = getExpFilters();
-  let query = sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', f.from).lte('order_date', f.to).eq('status', 'received').order('order_date', { ascending: true });
+  let query = sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', f.from).lte('order_date', f.to).neq('status', 'cancelled').order('order_date', { ascending: true });
   if (f.storeId) query = query.eq('store_id', f.storeId);
   const { data: orders } = await query;
   if (!orders?.length) { alert('該期間無進貨資料'); return; }

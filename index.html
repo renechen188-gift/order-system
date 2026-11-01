@@ -3461,8 +3461,8 @@ async function exportReceiveDetail() {
     const rQty = oi.received_qty != null ? parseFloat(oi.received_qty) : parseFloat(oi.ordered_qty) || 0;
     if (!rQty) return;
     const oQty = parseFloat(oi.ordered_qty) || 0;
-    const key = item?.id || oi.item_id;
-    const price = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
+    const supMap = (itemSupplierMap[item?.id] || []).find(m => m.supplier_id === oi.supplier_id);
+    const price = supMap?.unit_price || item?.purchase_price || 0;
     const total = rQty * price;
     grandTotal += total;
     const row = ws.addRow({

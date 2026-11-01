@@ -3316,6 +3316,7 @@ function renderExportPage() {
     <div style="padding:0 16px;display:grid;gap:10px">
       <button class="card-btn btn-green" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:none;color:#fff;cursor:pointer" onclick="exportPurchaseSummary()">📊 月度採購彙總</button>
       <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--accent);color:var(--accent);background:var(--surface);cursor:pointer" onclick="exportOrderDetail()">📋 各店叫貨明細</button>
+      <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid #0891b2;color:#0891b2;background:var(--surface);cursor:pointer" onclick="exportReceiveDetail()">📥 進貨明細</button>
       <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--purple);color:var(--purple);background:var(--surface);cursor:pointer" onclick="exportCountReport()">📦 盤點報表</button>
       <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--red);color:var(--red);background:var(--surface);cursor:pointer" onclick="exportPriceChanges()">💰 價格異動紀錄</button>
       <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid #f59e0b;color:#f59e0b;background:var(--surface);cursor:pointer" onclick="exportStockLedger()">📒 庫存異動明細</button>
@@ -3426,6 +3427,59 @@ async function exportOrderDetail() {
   ws.getColumn('ordered').numFmt = '#,##0.##';
   ws.getColumn('received').numFmt = '#,##0.##';
   await downloadWorkbook(wb, `叫貨明細_${f.from}_${f.to}.xlsx`);
+}
+
+async function exportReceiveDetail() {
+  const f = getExpFilters();
+  let query = sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', f.from).lte('order_date', f.to).eq('status', 'received').order('order_date', { ascending: true });
+  if (f.storeId) query = query.eq('store_id', f.storeId);
+  const { data: orders } = await query;
+  if (!orders?.length) { alert('該期間無進貨資料'); return; }
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('進貨明細');
+  ws.columns = [
+    { header: '日期', key: 'date', width: 12 },
+    { header: '門店', key: 'store', width: 14 },
+    { header: '品項', key: 'name', width: 18 },
+    { header: '類別', key: 'cat', width: 10 },
+    { header: '供應商', key: 'sup', width: 14 },
+    { header: '叫貨數量', key: 'ordered', width: 12 },
+    { header: '實收數量', key: 'received', width: 12 },
+    { header: '差異', key: 'diff', width: 8 },
+    { header: '單位', key: 'unit', width: 8 },
+    { header: '單價', key: 'price', width: 10 },
+    { header: '金額', key: 'total', width: 12 },
+    { header: '類型', key: 'type', width: 10 }
+  ];
+  styleHeader(ws);
+  let grandTotal = 0;
+  orders.forEach(o => (o.order_items || []).forEach(oi => {
+    if (oi.status === 'cancelled') return;
+    if (f.supId && oi.supplier_id !== f.supId) return;
+    const item = oi.items;
+    const rQty = oi.received_qty != null ? parseFloat(oi.received_qty) : parseFloat(oi.ordered_qty) || 0;
+    if (!rQty) return;
+    const oQty = parseFloat(oi.ordered_qty) || 0;
+    const key = item?.id || oi.item_id;
+    const price = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
+    const total = rQty * price;
+    grandTotal += total;
+    const row = ws.addRow({
+      date: o.order_date, store: o.stores?.name || '', name: item?.name || '', cat: item?.category || '',
+      sup: getSupplierName(oi.supplier_id), ordered: oQty, received: rQty, diff: rQty - oQty,
+      unit: item?.unit || '', price, total, type: o.order_type === 'internal' ? '央廚' : '外部'
+    });
+    if (rQty !== oQty) row.getCell('diff').font = { color: { argb: 'FFDC2626' }, bold: true };
+  }));
+  const sumRow = ws.addRow({ name: '合計', total: grandTotal });
+  sumRow.font = { bold: true, size: 12 };
+  ws.getColumn('ordered').numFmt = '#,##0.##';
+  ws.getColumn('received').numFmt = '#,##0.##';
+  ws.getColumn('diff').numFmt = '#,##0.##';
+  ws.getColumn('price').numFmt = '#,##0';
+  ws.getColumn('total').numFmt = '#,##0';
+  await downloadWorkbook(wb, `進貨明細_${f.from}_${f.to}.xlsx`);
 }
 
 async function exportCountReport() {

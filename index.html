@@ -1661,7 +1661,8 @@ async function loadTransferCost() {
       if (!qty) return;
       const price = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
       if (isFranchise) {
-        franchiseTotal += qty * price;
+        const fPrice = item?.franchise_price || price;
+        franchiseTotal += qty * fPrice;
       } else {
         if (!storeData[storeName].items[key]) storeData[storeName].items[key] = { name: item?.name || '', unit: item?.unit || '', cat: item?.category || '', qty: 0, price, subtotal: 0 };
         storeData[storeName].items[key].qty += qty;
@@ -1839,11 +1840,12 @@ async function pushTransferCostToPnL() {
       const key = item?.id || oi.item_id;
       const qty = oi.received_qty != null ? parseFloat(oi.received_qty) : parseFloat(oi.ordered_qty) || 0;
       if (!qty) return;
-      const price = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
-      const amount = qty * price;
+      const basePrice = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
       if (isFranchise) {
-        franchiseTotal += amount;
+        const fPrice = item?.franchise_price || basePrice;
+        franchiseTotal += qty * fPrice;
       } else {
+        const amount = qty * basePrice;
         if (tcCat(item?.category) === '大陸調料') storeData[storeName].dalu += amount;
         else storeData[storeName].other += amount;
       }
@@ -2442,6 +2444,7 @@ function openItemForm(itemId) {
           <div class="chip-group" id="fScope">${scopes.map(s => `<span class="chip ${(item?.brand_scope || 'ALL') === s ? 'active' : ''}" data-val="${s}" onclick="selectChip('fScope',this)">${s === 'ALL' ? '全品牌' : s}</span>`).join('')}</div></div>
         <div class="form-row">
           <div class="form-group"><label class="form-label">進貨價</label><input type="number" class="form-input" id="fPrice" value="${item?.purchase_price ?? ''}" placeholder="選填" inputmode="decimal"></div>
+          <div class="form-group"><label class="form-label">加盟售價</label><input type="number" class="form-input" id="fFranchisePrice" value="${item?.franchise_price ?? ''}" placeholder="選填" inputmode="decimal"></div>
           <div class="form-group"><label class="form-label">品項編號</label><input class="form-input" id="fCode" value="${item?.code || ''}" placeholder="選填"></div>
         </div>
         <div class="form-group"><label class="form-label">供應商</label>
@@ -2505,6 +2508,7 @@ async function saveItem(itemId) {
     type: document.querySelector('#fType .chip.active')?.dataset.val || 'material',
     brand_scope: document.querySelector('#fScope .chip.active')?.dataset.val || 'ALL',
     purchase_price: parseFloat(document.getElementById('fPrice').value) || null,
+    franchise_price: parseFloat(document.getElementById('fFranchisePrice').value) || null,
     needs_count: document.getElementById('fCount').classList.contains('on'),
     is_active: true
   };

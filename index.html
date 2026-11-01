@@ -1803,11 +1803,17 @@ async function pushTransferCostToPnL() {
 
   if (!orders?.length) { alert('本月無調撥紀錄'); return; }
 
+  const KITCHEN_HOME_STORE = '麻媽家信義';
+  const FRANCHISE_CONFIG = { '麻媽家東湖康寧': '2026-10-26' };
+
   const storeData = {};
+  let franchiseTotal = 0;
   orders.forEach(order => {
     const storeName = order.stores?.name;
     if (!storeName) return;
     if (!storeData[storeName]) storeData[storeName] = { dalu: 0, other: 0 };
+    const franchiseDate = FRANCHISE_CONFIG[storeName];
+    const isFranchise = franchiseDate && order.order_date >= franchiseDate;
     (order.order_items || []).filter(oi => oi.status !== 'cancelled' && oi.status !== 'short').forEach(oi => {
       const item = oi.items;
       const key = item?.id || oi.item_id;
@@ -1815,29 +1821,33 @@ async function pushTransferCostToPnL() {
       if (!qty) return;
       const price = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
       const amount = qty * price;
-      if (tcCat(item?.category) === '大陸調料') storeData[storeName].dalu += amount;
-      else storeData[storeName].other += amount;
+      if (isFranchise) {
+        franchiseTotal += amount;
+      } else {
+        if (tcCat(item?.category) === '大陸調料') storeData[storeName].dalu += amount;
+        else storeData[storeName].other += amount;
+      }
     });
   });
 
-  const KITCHEN_HOME_STORE = '麻媽家信義';
   let totalOut = 0;
   for (const [store, d] of Object.entries(storeData)) {
-    if (store !== KITCHEN_HOME_STORE) {
-      totalOut += d.dalu + d.other;
-    }
+    if (store !== KITCHEN_HOME_STORE) totalOut += d.dalu + d.other;
   }
 
   const summary = Object.entries(storeData)
     .filter(([store]) => store !== KITCHEN_HOME_STORE)
+    .filter(([, d]) => d.dalu > 0 || d.other > 0)
     .map(([store, d]) =>
       `${store}：大陸調料 $${fmtNum(d.dalu)} / 倉店調撥 $${fmtNum(d.other)}`
     ).join('\n');
   const deductLine = totalOut > 0 ? `\n\n${KITCHEN_HOME_STORE}（減）調撥出 $${fmtNum(totalOut)}` : '';
-  if (!confirm(`推送 ${tcMonth} 調撥到損益表：\n\n${summary}${deductLine}\n\n確認推送？`)) return;
+  const franchiseLine = franchiseTotal > 0 ? `\n\n${KITCHEN_HOME_STORE} 加盟供貨收入 $${fmtNum(franchiseTotal)}` : '';
+  if (!confirm(`推送 ${tcMonth} 調撥到損益表：\n\n${summary}${deductLine}${franchiseLine}\n\n確認推送？`)) return;
 
   const desc = '央廚調撥（自動推送）';
   const descDeduct = '央廚調撥扣減（自動推送）';
+  const descFranchise = '加盟供貨（自動推送）';
   const attrMonth = tcMonth.replace('-', '');
 
   const lastDay = new Date(tcMonth + '-01');
@@ -1852,6 +1862,7 @@ async function pushTransferCostToPnL() {
     if (d.other > 0) rows.push({ entry_date: entryDate, store, subject: '成本-倉店調撥', vendor: '央廚', description: desc, amount: d.other, fee: 0, attribution_month: attrMonth });
   }
   if (totalOut > 0) rows.push({ entry_date: entryDate, store: KITCHEN_HOME_STORE, subject: '成本-調撥扣減', vendor: '央廚', description: descDeduct, amount: totalOut, fee: 0, attribution_month: attrMonth });
+  if (franchiseTotal > 0) rows.push({ entry_date: entryDate, store: KITCHEN_HOME_STORE, subject: '其他收入-加盟供貨', vendor: '東湖康寧', description: descFranchise, amount: franchiseTotal, fee: 0, attribution_month: attrMonth });
 
   const { error } = await sb.rpc('push_transfer_cost', { p_month: attrMonth, p_entries: rows });
   if (error) { alert('推送失敗: ' + error.message); return; }

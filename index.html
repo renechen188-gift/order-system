@@ -3487,7 +3487,10 @@ async function exportReceiveDetail() {
     if (!rQty) return;
     const oQty = parseFloat(oi.ordered_qty) || 0;
     const supMap = (itemSupplierMap[item?.id] || []).find(m => m.supplier_id === oi.supplier_id);
-    const price = supMap?.unit_price || item?.purchase_price || 0;
+    const basePrice = supMap?.unit_price || item?.purchase_price || 0;
+    const FCONFIG = { '麻媽家東湖康寧': '2026-10-26' };
+    const fDate = FCONFIG[o.stores?.name];
+    const price = (fDate && o.order_date >= fDate && item?.franchise_price) ? item.franchise_price : basePrice;
     const total = rQty * price;
     const d = o.order_date;
     if (!byDate[d]) byDate[d] = { rows: [], subtotal: 0 };

@@ -2761,7 +2761,8 @@ async function approveSheet(sheetId, period) {
       const storeName = allStores.find(s => s.id === sheet.store_id)?.name;
       if (storeName) {
         let invValue = 0;
-        (counts || []).forEach(c => { invValue += (c.actual_qty || 0) * (c.items?.purchase_price || 0); });
+        const needsCountIds = new Set(allItems.filter(i => i.needs_count).map(i => i.id));
+        (counts || []).forEach(c => { if (needsCountIds.has(c.item_id)) invValue += (c.actual_qty || 0) * (c.items?.purchase_price || 0); });
         invValue = Math.round(invValue);
         await sb.rpc('push_inventory_value', { p_store: storeName, p_month: ym, p_amount: invValue, p_desc: `盤點 ${period}（自動推送）` });
         alert(`已推送 ${storeName} 期末盤存 $${fmtNum(invValue)} 到損益表`);

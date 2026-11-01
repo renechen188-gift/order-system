@@ -1635,7 +1635,8 @@ async function loadTransferCost() {
   const priceMap = {};
   (itemSups || []).forEach(is => { priceMap[is.item_id + '_' + is.supplier_id] = is.unit_price; priceMap[is.item_id] = priceMap[is.item_id] || is.unit_price; });
 
-  const storeOnly = o => o.stores?.type === 'store';
+  const KITCHEN_HOME_STORE = '麻媽家信義';
+  const storeOnly = o => o.stores?.type === 'store' && o.stores?.name !== KITCHEN_HOME_STORE;
   const orders = [...(intOrders || []).filter(storeOnly)];
   (extOrders || []).filter(storeOnly).forEach(o => {
     const kitchenItems = (o.order_items || []).filter(oi => kitchenSupIds.has(oi.supplier_id));
@@ -1644,28 +1645,39 @@ async function loadTransferCost() {
 
   if (!orders?.length) { el.innerHTML = '<div class="section-bar">央廚調撥報表</div>' + picker + '<div class="empty-state"><div class="icon">📋</div><div class="msg">' + tcMonth + ' 無央廚調撥紀錄</div></div>'; return; }
 
+  const FRANCHISE_CONFIG_DISP = { '麻媽家東湖康寧': '2026-10-26' };
   const storeData = {};
+  let franchiseTotal = 0;
   orders.forEach(order => {
     const storeName = order.stores?.name || '?';
     const storeId = order.store_id;
     if (!storeData[storeName]) storeData[storeName] = { storeId, items: {}, total: 0 };
+    const franchiseDate = FRANCHISE_CONFIG_DISP[storeName];
+    const isFranchise = franchiseDate && order.order_date >= franchiseDate;
     (order.order_items || []).filter(oi => oi.status !== 'cancelled' && oi.status !== 'short').forEach(oi => {
       const item = oi.items;
       const key = item?.id || oi.item_id;
       const qty = oi.received_qty != null ? parseFloat(oi.received_qty) : parseFloat(oi.ordered_qty) || 0;
       if (!qty) return;
       const price = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
-      if (!storeData[storeName].items[key]) storeData[storeName].items[key] = { name: item?.name || '', unit: item?.unit || '', cat: item?.category || '', qty: 0, price, subtotal: 0 };
-      storeData[storeName].items[key].qty += qty;
-      storeData[storeName].items[key].subtotal = storeData[storeName].items[key].qty * price;
+      if (isFranchise) {
+        franchiseTotal += qty * price;
+      } else {
+        if (!storeData[storeName].items[key]) storeData[storeName].items[key] = { name: item?.name || '', unit: item?.unit || '', cat: item?.category || '', qty: 0, price, subtotal: 0 };
+        storeData[storeName].items[key].qty += qty;
+        storeData[storeName].items[key].subtotal = storeData[storeName].items[key].qty * price;
+      }
     });
   });
 
   for (const s of Object.values(storeData)) {
     s.total = Object.values(s.items).reduce((sum, it) => sum + it.subtotal, 0);
   }
+  // 移除沒有調撥項目的門店（例如加盟後全部訂單都歸加盟）
+  for (const [k, s] of Object.entries(storeData)) { if (s.total === 0 && Object.keys(s.items).length === 0) delete storeData[k]; }
 
-  const grandTotal = Object.values(storeData).reduce((sum, s) => sum + s.total, 0);
+  const transferTotal = Object.values(storeData).reduce((sum, s) => sum + s.total, 0);
+  const grandTotal = transferTotal + franchiseTotal;
   const noPrice = [];
   Object.values(storeData).forEach(s => Object.values(s.items).forEach(it => { if (!it.price && it.qty > 0 && !noPrice.find(n => n.name === it.name)) noPrice.push(it); }));
 
@@ -1682,8 +1694,15 @@ async function loadTransferCost() {
     const color = isCool ? '#3b82f6' : '#ef4444';
     html += `<div style="flex:1;min-width:140px;padding:12px 14px;background:${color}08;border:1px solid ${color}25;border-radius:12px;text-align:center"><div style="font-size:13px;font-weight:600;color:${color}">${storeName}</div><div style="font-size:20px;font-weight:700;color:var(--text);margin-top:4px">$${fmtNum(data.total)}</div></div>`;
   }
+  if (franchiseTotal > 0) {
+    html += `<div style="flex:1;min-width:140px;padding:12px 14px;background:#f0fdf4;border:1px solid #22c55e25;border-radius:12px;text-align:center"><div style="font-size:13px;font-weight:600;color:#16a34a">加盟供貨</div><div style="font-size:20px;font-weight:700;color:var(--text);margin-top:4px">$${fmtNum(franchiseTotal)}</div></div>`;
+  }
   html += `<div style="flex:1;min-width:140px;padding:12px 14px;background:var(--accent-light);border:1px solid var(--accent)25;border-radius:12px;text-align:center"><div style="font-size:13px;font-weight:600;color:var(--accent)">合計</div><div style="font-size:20px;font-weight:700;color:var(--text);margin-top:4px">$${fmtNum(grandTotal)}</div></div>`;
-  html += `</div></div>`;
+  html += `</div>`;
+  if (transferTotal > 0) {
+    html += `<div style="margin-top:8px;padding:10px 14px;background:#fef3c7;border:1px solid #f59e0b40;border-radius:10px;font-size:13px;color:#92400e">📤 推送到損益：各店調撥入 $${fmtNum(transferTotal)}｜${KITCHEN_HOME_STORE} 調撥出 -$${fmtNum(transferTotal)}${franchiseTotal > 0 ? '｜加盟供貨收入 $' + fmtNum(franchiseTotal) : ''}</div>`;
+  }
+  html += `</div>`;
 
   for (const [storeName, data] of sortedStores) {
     const isCool = storeName.startsWith('涼三伯');
@@ -1730,7 +1749,8 @@ async function exportTransferCost() {
   ]);
   const priceMap = {};
   (itemSups || []).forEach(is => { priceMap[is.item_id + '_' + is.supplier_id] = is.unit_price; priceMap[is.item_id] = priceMap[is.item_id] || is.unit_price; });
-  const storeOnly = o => o.stores?.type === 'store';
+  const KITCHEN_HOME = '麻媽家信義';
+  const storeOnly = o => o.stores?.type === 'store' && o.stores?.name !== KITCHEN_HOME;
   const orders = [...(intOrders || []).filter(storeOnly)];
   (extOrders || []).filter(storeOnly).forEach(o => {
     const ki = (o.order_items || []).filter(oi => kitchenSupIds.has(oi.supplier_id));

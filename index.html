@@ -3340,7 +3340,7 @@ function renderExportPage() {
     <div style="padding:0 16px;display:grid;gap:10px">
       <button class="card-btn btn-green" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:none;color:#fff;cursor:pointer" onclick="exportPurchaseSummary()">📊 月度採購彙總</button>
       <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--accent);color:var(--accent);background:var(--surface);cursor:pointer" onclick="exportOrderDetail()">📋 各店叫貨明細</button>
-      <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid #0891b2;color:#0891b2;background:var(--surface);cursor:pointer" onclick="exportReceiveDetail()">📥 進貨明細</button>
+      <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid #0891b2;color:#0891b2;background:var(--surface);cursor:pointer" onclick="exportReceiveDetail()">📥 叫貨明細</button>
       <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--purple);color:var(--purple);background:var(--surface);cursor:pointer" onclick="exportCountReport()">📦 盤點報表</button>
       <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--red);color:var(--red);background:var(--surface);cursor:pointer" onclick="exportPriceChanges()">💰 價格異動紀錄</button>
       <button class="card-btn" style="width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid #f59e0b;color:#f59e0b;background:var(--surface);cursor:pointer" onclick="exportStockLedger()">📒 庫存異動明細</button>
@@ -3455,48 +3455,42 @@ async function exportOrderDetail() {
 
 async function exportReceiveDetail() {
   const f = getExpFilters();
-  const prevDay = d => { const dt = new Date(d + 'T00:00:00'); dt.setDate(dt.getDate() - 1); return dt.toISOString().slice(0, 10); };
-  let query = sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', prevDay(f.from)).lte('order_date', prevDay(f.to)).neq('status', 'cancelled').order('order_date', { ascending: true });
+  let query = sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', f.from).lte('order_date', f.to).neq('status', 'cancelled').order('order_date', { ascending: true });
   if (f.storeId) query = query.eq('store_id', f.storeId);
   const { data: orders } = await query;
-  if (!orders?.length) { alert('該期間無進貨資料'); return; }
+  if (!orders?.length) { alert('該期間無叫貨資料'); return; }
 
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('進貨明細');
+  const ws = wb.addWorksheet('叫貨明細');
   ws.columns = [
-    { header: '到貨日期', key: 'date', width: 12 },
+    { header: '叫貨日期', key: 'date', width: 12 },
     { header: '門店', key: 'store', width: 14 },
     { header: '品項', key: 'name', width: 18 },
     { header: '類別', key: 'cat', width: 10 },
     { header: '供應商', key: 'sup', width: 14 },
-    { header: '叫貨數量', key: 'ordered', width: 12 },
-    { header: '實收數量', key: 'received', width: 12 },
-    { header: '差異', key: 'diff', width: 8 },
+    { header: '數量', key: 'qty', width: 10 },
     { header: '單位', key: 'unit', width: 8 },
     { header: '單價', key: 'price', width: 10 },
     { header: '金額', key: 'total', width: 12 },
     { header: '類型', key: 'type', width: 10 }
   ];
   styleHeader(ws);
-  // 按日期分組
   const byDate = {};
   orders.forEach(o => (o.order_items || []).forEach(oi => {
     if (oi.status === 'cancelled') return;
     if (f.supId && oi.supplier_id !== f.supId) return;
     const item = oi.items;
-    const rQty = oi.received_qty != null ? parseFloat(oi.received_qty) : parseFloat(oi.ordered_qty) || 0;
-    if (!rQty) return;
-    const oQty = parseFloat(oi.ordered_qty) || 0;
+    const qty = parseFloat(oi.ordered_qty) || 0;
+    if (!qty) return;
     const supMap = (itemSupplierMap[item?.id] || []).find(m => m.supplier_id === oi.supplier_id);
     const basePrice = supMap?.unit_price || item?.purchase_price || 0;
     const FCONFIG = { '麻媽家東湖康寧': '2026-10-26' };
     const fDate = FCONFIG[o.stores?.name];
     const price = (fDate && o.order_date >= fDate && item?.franchise_price) ? item.franchise_price : basePrice;
-    const total = rQty * price;
-    const rd = new Date(o.order_date + 'T00:00:00'); rd.setDate(rd.getDate() + 1);
-    const d = rd.toISOString().slice(0, 10);
+    const total = qty * price;
+    const d = o.order_date;
     if (!byDate[d]) byDate[d] = { rows: [], subtotal: 0 };
-    byDate[d].rows.push({ date: d, store: o.stores?.name || '', name: item?.name || '', cat: item?.category || '', sup: getSupplierName(oi.supplier_id), ordered: oQty, received: rQty, diff: rQty - oQty, unit: item?.unit || '', price, total, type: o.order_type === 'internal' ? '央廚' : '外部' });
+    byDate[d].rows.push({ date: d, store: o.stores?.name || '', name: item?.name || '', cat: item?.category || '', sup: getSupplierName(oi.supplier_id), qty, unit: item?.unit || '', price, total, type: o.order_type === 'internal' ? '央廚' : '外部' });
     byDate[d].subtotal += total;
   }));
   let grandTotal = 0;
@@ -3504,8 +3498,7 @@ async function exportReceiveDetail() {
   sortedDates.forEach(date => {
     const { rows, subtotal } = byDate[date];
     rows.forEach(r => {
-      const row = ws.addRow(r);
-      if (r.diff !== 0) row.getCell('diff').font = { color: { argb: 'FFDC2626' }, bold: true };
+      ws.addRow(r);
     });
     const subRow = ws.addRow({ name: `${date} 小計`, total: subtotal });
     subRow.font = { bold: true };
@@ -3517,12 +3510,10 @@ async function exportReceiveDetail() {
   ws.addRow({});
   const sumRow = ws.addRow({ name: '總計', total: grandTotal });
   sumRow.font = { bold: true, size: 12 };
-  ws.getColumn('ordered').numFmt = '#,##0.##';
-  ws.getColumn('received').numFmt = '#,##0.##';
-  ws.getColumn('diff').numFmt = '#,##0.##';
+  ws.getColumn('qty').numFmt = '#,##0.##';
   ws.getColumn('price').numFmt = '#,##0';
   ws.getColumn('total').numFmt = '#,##0';
-  await downloadWorkbook(wb, `進貨明細_${f.from}_${f.to}.xlsx`);
+  await downloadWorkbook(wb, `叫貨明細_${f.from}_${f.to}.xlsx`);
 }
 
 async function exportCountReport() {

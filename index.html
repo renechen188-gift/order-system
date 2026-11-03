@@ -1733,6 +1733,7 @@ async function loadTransferCost() {
   html += `<button class="card-btn" style="flex:1;min-width:200px;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--purple);color:var(--purple);background:var(--surface);cursor:pointer" onclick="exportTransferCost()">📊 匯出調撥報表</button>`;
   if (currentUser.role === 'admin' && tcMonth >= '2026-09') {
     html += `<button class="card-btn" style="flex:1;min-width:200px;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid var(--green);color:var(--green);background:var(--surface);cursor:pointer" onclick="pushTransferCostToPnL()">📤 推送到損益表</button>`;
+    html += `<button class="card-btn" style="flex:1;min-width:200px;padding:14px;border-radius:12px;font-size:15px;font-weight:700;border:1px solid #2563eb;color:#2563eb;background:var(--surface);cursor:pointer" onclick="pushInterstoreTransfer()">📤 推送到登帳</button>`;
   }
   html += `</div>`;
   el.innerHTML = html;
@@ -1889,6 +1890,83 @@ async function pushTransferCostToPnL() {
   const { error } = await sb.rpc('push_transfer_cost', { p_month: attrMonth, p_entries: rows });
   if (error) { alert('推送失敗: ' + error.message); return; }
   alert(`已推送 ${rows.length} 筆調撥到損益表 ✓`);
+}
+
+async function pushInterstoreTransfer() {
+  if (tcMonth < '2026-09') { alert('跨店往來從 2026-09 開始'); return; }
+
+  const kitchenSupIds = new Set(allSuppliers.filter(s => s.type === 'central_kitchen').map(s => s.id));
+  const monthStart = tcMonth + '-01';
+  const mEnd = new Date(tcMonth + '-01'); mEnd.setMonth(mEnd.getMonth() + 1); mEnd.setDate(0);
+  const monthEnd = mEnd.toISOString().slice(0, 10);
+  const [{ data: intOrders }, { data: extOrders }, { data: itemSups }] = await Promise.all([
+    sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', monthStart).lte('order_date', monthEnd).eq('order_type', 'internal').neq('status', 'cancelled'),
+    sb.from('orders').select('*, order_items(*, items(*)), stores(*)').gte('order_date', monthStart).lte('order_date', monthEnd).eq('order_type', 'external').neq('status', 'cancelled'),
+    sb.from('item_suppliers').select('item_id,supplier_id,unit_price')
+  ]);
+  const priceMap = {};
+  (itemSups || []).forEach(is => { priceMap[is.item_id + '_' + is.supplier_id] = is.unit_price; priceMap[is.item_id] = priceMap[is.item_id] || is.unit_price; });
+
+  const KITCHEN_HOME = '麻媽家信義';
+  const FCONFIG = { '麻媽家東湖康寧': '2026-10-26' };
+  const storeOnly = o => o.stores?.type === 'store' && o.stores?.name !== KITCHEN_HOME;
+  const orders = [...(intOrders || []).filter(storeOnly)];
+  (extOrders || []).filter(storeOnly).forEach(o => {
+    const ki = (o.order_items || []).filter(oi => kitchenSupIds.has(oi.supplier_id));
+    if (ki.length) orders.push({ ...o, order_items: ki });
+  });
+
+  if (!orders?.length) { alert('本月無調撥紀錄'); return; }
+
+  const storeTotals = {};
+  let franchiseTotal = 0;
+  orders.forEach(order => {
+    const storeName = order.stores?.name;
+    if (!storeName) return;
+    if (!storeTotals[storeName]) storeTotals[storeName] = 0;
+    const franchiseDate = FCONFIG[storeName];
+    const isFranchise = franchiseDate && order.order_date >= franchiseDate;
+    (order.order_items || []).filter(oi => oi.status !== 'cancelled' && oi.status !== 'short').forEach(oi => {
+      const item = oi.items;
+      const key = item?.id || oi.item_id;
+      const qty = oi.received_qty != null ? parseFloat(oi.received_qty) : parseFloat(oi.ordered_qty) || 0;
+      if (!qty) return;
+      const basePrice = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
+      if (isFranchise) {
+        const fPrice = item?.franchise_price || basePrice;
+        franchiseTotal += qty * fPrice;
+      } else {
+        storeTotals[storeName] += qty * basePrice;
+      }
+    });
+  });
+
+  const summary = Object.entries(storeTotals)
+    .filter(([, total]) => total > 0)
+    .map(([store, total]) => `${store} → 信義 $${fmtNum(total)}`)
+    .join('\n');
+  const franchiseLine = franchiseTotal > 0 ? `\n東湖康寧加盟 → 信義 $${fmtNum(franchiseTotal)}` : '';
+  if (!confirm(`推送 ${tcMonth} 跨店往來到登帳：\n\n${summary}${franchiseLine}\n\n每店一筆應付（信義），信義一筆應收（各店）\n確認推送？`)) return;
+
+  const desc = '跨店往來（自動推送）';
+  const attrMonth = tcMonth.replace('-', '');
+  const lastDay = new Date(tcMonth + '-01'); lastDay.setMonth(lastDay.getMonth() + 1); lastDay.setDate(0);
+  const entryDate = lastDay.toISOString().slice(0, 10);
+
+  const rows = [];
+  for (const [store, total] of Object.entries(storeTotals)) {
+    if (total <= 0) continue;
+    rows.push({ entry_date: entryDate, store, subject: '跨店往來', vendor: KITCHEN_HOME, description: desc, amount: total, fee: 0, attribution_month: attrMonth });
+    rows.push({ entry_date: entryDate, store: KITCHEN_HOME, subject: '跨店往來', vendor: store, description: desc, amount: total, fee: 0, attribution_month: attrMonth });
+  }
+  if (franchiseTotal > 0) {
+    rows.push({ entry_date: entryDate, store: '麻媽家東湖康寧', subject: '跨店往來', vendor: KITCHEN_HOME, description: desc, amount: franchiseTotal, fee: 0, attribution_month: attrMonth });
+    rows.push({ entry_date: entryDate, store: KITCHEN_HOME, subject: '跨店往來', vendor: '麻媽家東湖康寧', description: desc, amount: franchiseTotal, fee: 0, attribution_month: attrMonth });
+  }
+
+  const { error } = await sb.rpc('push_interstore_transfer', { p_month: attrMonth, p_entries: rows });
+  if (error) { alert('推送失敗: ' + error.message); return; }
+  alert(`已推送 ${rows.length} 筆跨店往來到登帳 ✓`);
 }
 
 // ══════════ PRICE REVIEWS (Admin) ══════════

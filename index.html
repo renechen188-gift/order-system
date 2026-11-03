@@ -3463,7 +3463,7 @@ async function exportReceiveDetail() {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('進貨明細');
   ws.columns = [
-    { header: '日期', key: 'date', width: 12 },
+    { header: '到貨日期', key: 'date', width: 12 },
     { header: '門店', key: 'store', width: 14 },
     { header: '品項', key: 'name', width: 18 },
     { header: '類別', key: 'cat', width: 10 },
@@ -3492,7 +3492,8 @@ async function exportReceiveDetail() {
     const fDate = FCONFIG[o.stores?.name];
     const price = (fDate && o.order_date >= fDate && item?.franchise_price) ? item.franchise_price : basePrice;
     const total = rQty * price;
-    const d = o.order_date;
+    const rd = new Date(o.order_date + 'T00:00:00'); rd.setDate(rd.getDate() + 1);
+    const d = rd.toISOString().slice(0, 10);
     if (!byDate[d]) byDate[d] = { rows: [], subtotal: 0 };
     byDate[d].rows.push({ date: d, store: o.stores?.name || '', name: item?.name || '', cat: item?.category || '', sup: getSupplierName(oi.supplier_id), ordered: oQty, received: rQty, diff: rQty - oQty, unit: item?.unit || '', price, total, type: o.order_type === 'internal' ? '央廚' : '外部' });
     byDate[d].subtotal += total;

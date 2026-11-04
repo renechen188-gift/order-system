@@ -1946,7 +1946,7 @@ async function pushInterstoreTransfer() {
     .map(([store, total]) => `${store} → 信義 $${fmtNum(total)}`)
     .join('\n');
   const franchiseLine = franchiseTotal > 0 ? `\n麻媽家東湖康寧（加盟供貨）→ 信義 $${fmtNum(franchiseTotal)}` : '';
-  if (!confirm(`推送 ${tcMonth} 跨店往來到登帳：\n\n${summary}${franchiseLine}\n\n每店一筆應付（信義），信義一筆應收（各店）\n確認推送？`)) return;
+  if (!confirm(`推送 ${tcMonth} 跨店往來到登帳：\n\n${summary}${franchiseLine}\n\n確認推送？`)) return;
 
   const desc = '跨店往來（自動推送）';
   const descFranchise = '跨店往來-加盟供貨（自動推送）';
@@ -1958,11 +1958,9 @@ async function pushInterstoreTransfer() {
   for (const [store, total] of Object.entries(storeTotals)) {
     if (total <= 0) continue;
     rows.push({ entry_date: entryDate, store, subject: '跨店往來', vendor: KITCHEN_HOME, description: desc, amount: total, fee: 0, attribution_month: attrMonth });
-    rows.push({ entry_date: entryDate, store: KITCHEN_HOME, subject: '跨店往來', vendor: store, description: desc, amount: total, fee: 0, attribution_month: attrMonth });
   }
   if (franchiseTotal > 0) {
     rows.push({ entry_date: entryDate, store: '麻媽家東湖康寧', subject: '跨店往來', vendor: KITCHEN_HOME, description: descFranchise, amount: franchiseTotal, fee: 0, attribution_month: attrMonth });
-    rows.push({ entry_date: entryDate, store: KITCHEN_HOME, subject: '跨店往來', vendor: '麻媽家東湖康寧', description: descFranchise, amount: franchiseTotal, fee: 0, attribution_month: attrMonth });
   }
 
   const { error } = await sb.rpc('push_interstore_transfer', { p_month: attrMonth, p_entries: rows });

@@ -1919,7 +1919,6 @@ async function pushInterstoreTransfer() {
   if (!orders?.length) { alert('本月無調撥紀錄'); return; }
 
   const storeTotals = {};
-  let franchiseTotal = 0;
   orders.forEach(order => {
     const storeName = order.stores?.name;
     if (!storeName) return;
@@ -1934,7 +1933,7 @@ async function pushInterstoreTransfer() {
       const basePrice = priceMap[key + '_' + oi.supplier_id] || priceMap[key] || item?.purchase_price || 0;
       if (isFranchise) {
         const fPrice = item?.franchise_price || basePrice;
-        franchiseTotal += qty * fPrice;
+        storeTotals[storeName] += qty * fPrice;
       } else {
         storeTotals[storeName] += qty * basePrice;
       }
@@ -1945,8 +1944,7 @@ async function pushInterstoreTransfer() {
     .filter(([, total]) => total > 0)
     .map(([store, total]) => `${store} → 信義 $${fmtNum(total)}`)
     .join('\n');
-  const franchiseLine = franchiseTotal > 0 ? `\n東湖康寧加盟 → 信義 $${fmtNum(franchiseTotal)}` : '';
-  if (!confirm(`推送 ${tcMonth} 跨店往來到登帳：\n\n${summary}${franchiseLine}\n\n每店一筆應付（信義），信義一筆應收（各店）\n確認推送？`)) return;
+  if (!confirm(`推送 ${tcMonth} 跨店往來到登帳：\n\n${summary}\n\n每店一筆應付（信義），信義一筆應收（各店）\n確認推送？`)) return;
 
   const desc = '跨店往來（自動推送）';
   const attrMonth = tcMonth.replace('-', '');
@@ -1958,10 +1956,6 @@ async function pushInterstoreTransfer() {
     if (total <= 0) continue;
     rows.push({ entry_date: entryDate, store, subject: '跨店往來', vendor: KITCHEN_HOME, description: desc, amount: total, fee: 0, attribution_month: attrMonth });
     rows.push({ entry_date: entryDate, store: KITCHEN_HOME, subject: '跨店往來', vendor: store, description: desc, amount: total, fee: 0, attribution_month: attrMonth });
-  }
-  if (franchiseTotal > 0) {
-    rows.push({ entry_date: entryDate, store: '麻媽家東湖康寧', subject: '跨店往來', vendor: KITCHEN_HOME, description: desc, amount: franchiseTotal, fee: 0, attribution_month: attrMonth });
-    rows.push({ entry_date: entryDate, store: KITCHEN_HOME, subject: '跨店往來', vendor: '麻媽家東湖康寧', description: desc, amount: franchiseTotal, fee: 0, attribution_month: attrMonth });
   }
 
   const { error } = await sb.rpc('push_interstore_transfer', { p_month: attrMonth, p_entries: rows });
